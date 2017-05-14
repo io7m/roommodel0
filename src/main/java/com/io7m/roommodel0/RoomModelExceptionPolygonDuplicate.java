@@ -1,22 +1,21 @@
 package com.io7m.roommodel0;
 
-public final class RoomModelExceptionPolygonNonexistent extends
-  RoomModelException
+public final class RoomModelExceptionPolygonDuplicate extends RoomModelException
 {
-  public RoomModelExceptionPolygonNonexistent(
+  public RoomModelExceptionPolygonDuplicate(
     final String message)
   {
     super(message);
   }
 
-  public RoomModelExceptionPolygonNonexistent(
+  public RoomModelExceptionPolygonDuplicate(
     final String message,
     final Throwable cause)
   {
     super(message, cause);
   }
 
-  public RoomModelExceptionPolygonNonexistent(
+  public RoomModelExceptionPolygonDuplicate(
     final Throwable cause)
   {
     super(cause);

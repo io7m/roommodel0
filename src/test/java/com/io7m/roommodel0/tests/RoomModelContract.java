@@ -1,10 +1,8 @@
 package com.io7m.roommodel0.tests;
 
-import com.io7m.jregions.core.unparameterized.areas.AreaL;
-import com.io7m.jregions.core.unparameterized.areas.AreasL;
 import com.io7m.jtensors.core.unparameterized.vectors.Vector2I;
-import com.io7m.junreachable.UnimplementedCodeException;
 import com.io7m.junreachable.UnreachableCodeException;
+import com.io7m.roommodel0.RoomModelExceptionPolygonDuplicate;
 import com.io7m.roommodel0.RoomModelExceptionPolygonNonexistent;
 import com.io7m.roommodel0.RoomModelExceptionPolygonNotConvex;
 import com.io7m.roommodel0.RoomModelExceptionPolygonOutsideBounds;
@@ -12,7 +10,9 @@ import com.io7m.roommodel0.RoomModelExceptionPolygonTooFewVertices;
 import com.io7m.roommodel0.RoomModelExceptionVertexNonexistent;
 import com.io7m.roommodel0.RoomModelType;
 import com.io7m.roommodel0.RoomPolyEdgeType;
+import com.io7m.roommodel0.RoomPolyVertexID;
 import com.io7m.roommodel0.RoomPolyVertexType;
+import com.io7m.roommodel0.RoomPolygonID;
 import com.io7m.roommodel0.RoomPolygonType;
 import org.hamcrest.core.StringContains;
 import org.junit.Assert;
@@ -21,7 +21,6 @@ import org.junit.Test;
 import org.junit.rules.ExpectedException;
 import org.slf4j.Logger;
 
-import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 
@@ -42,7 +41,7 @@ public abstract class RoomModelContract
     final RoomPolyVertexType v1 = model.vertexCreate(Vector2I.of(0, 0));
     final RoomPolyVertexType v2 = model.vertexCreate(Vector2I.of(1, 0));
 
-    final RoomPolygonType poly = model.polygonCreateV(v0, v1, v2);
+    final RoomPolygonType poly = model.polygonCreateVV(v0, v1, v2);
 
     Assert.assertTrue(model.polygons().contains(poly));
 
@@ -83,6 +82,45 @@ public abstract class RoomModelContract
   }
 
   @Test
+  public final void testCreatePolygonWithID()
+  {
+    final RoomModelType model = this.emptyModel();
+
+    final RoomPolyVertexType v0 = model.vertexCreate(Vector2I.of(0, 1));
+    final RoomPolyVertexType v1 = model.vertexCreate(Vector2I.of(0, 0));
+    final RoomPolyVertexType v2 = model.vertexCreate(Vector2I.of(1, 0));
+
+    final RoomPolygonID pid = RoomPolygonID.of(1L);
+
+    final RoomPolygonType poly0 =
+      model.polygonCreateWithIDVV(pid, v0, v1, v2);
+    final RoomPolygonType poly1 =
+      model.polygonCreateVV(v0, v1, v2);
+    final RoomPolygonType poly2 =
+      model.polygonCreateVV(v0, v1, v2);
+
+    Assert.assertNotEquals(poly0.id(), poly1.id());
+    Assert.assertNotEquals(poly1.id(), poly2.id());
+    Assert.assertNotEquals(poly2.id(), poly0.id());
+  }
+
+  @Test
+  public final void testCreatePolygonWithIDExists()
+  {
+    final RoomModelType model = this.emptyModel();
+
+    final RoomPolyVertexType v0 = model.vertexCreate(Vector2I.of(0, 1));
+    final RoomPolyVertexType v1 = model.vertexCreate(Vector2I.of(0, 0));
+    final RoomPolyVertexType v2 = model.vertexCreate(Vector2I.of(1, 0));
+
+    final RoomPolygonID pid = RoomPolygonID.of(0L);
+    model.polygonCreateWithIDVV(pid, v0, v1, v2);
+
+    this.expected.expect(RoomModelExceptionPolygonDuplicate.class);
+    model.polygonCreateWithIDVV(pid, v0, v1, v2);
+  }
+
+  @Test
   public final void testCreatePolygonJoined()
   {
     final RoomModelType model = this.emptyModel();
@@ -92,8 +130,8 @@ public abstract class RoomModelContract
     final RoomPolyVertexType v2 = model.vertexCreate(Vector2I.of(1, 0));
     final RoomPolyVertexType v3 = model.vertexCreate(Vector2I.of(1, 1));
 
-    final RoomPolygonType poly0 = model.polygonCreateV(v0, v1, v2);
-    final RoomPolygonType poly1 = model.polygonCreateV(v0, v2, v3);
+    final RoomPolygonType poly0 = model.polygonCreateVV(v0, v1, v2);
+    final RoomPolygonType poly1 = model.polygonCreateVV(v0, v2, v3);
 
     Assert.assertTrue(model.polygons().contains(poly0));
     Assert.assertTrue(model.polygons().contains(poly1));
@@ -191,9 +229,15 @@ public abstract class RoomModelContract
     final RoomPolyVertexType v2 = new RoomPolyVertexType()
     {
       @Override
-      public long id()
+      public RoomPolyVertexID id()
       {
-        return Long.MAX_VALUE;
+        return RoomPolyVertexID.of(Long.MAX_VALUE);
+      }
+
+      @Override
+      public boolean deleted()
+      {
+        return false;
       }
 
       @Override
@@ -210,8 +254,7 @@ public abstract class RoomModelContract
     };
 
     this.expected.expect(RoomModelExceptionVertexNonexistent.class);
-    this.expected.expectMessage(StringContains.containsString("does not belong to this model"));
-    model.polygonCreateV(v0, v1, v2);
+    model.polygonCreateVV(v0, v1, v2);
   }
 
   @Test
@@ -226,7 +269,7 @@ public abstract class RoomModelContract
 
     this.expected.expect(RoomModelExceptionPolygonNotConvex.class);
     this.expected.expectMessage(StringContains.containsString("not convex"));
-    model.polygonCreateV(v0, v1, v2, v3);
+    model.polygonCreateVV(v0, v1, v2, v3);
   }
 
   @Test
@@ -234,13 +277,19 @@ public abstract class RoomModelContract
   {
     final RoomModelType model = this.emptyModel();
 
-    final RoomPolyVertexType v0 = model.vertexCreate(Vector2I.of(-1000000, 1000000));
-    final RoomPolyVertexType v1 = model.vertexCreate(Vector2I.of(-1000000, -1000000));
-    final RoomPolyVertexType v2 = model.vertexCreate(Vector2I.of(1000000, 1000000));
+    final RoomPolyVertexType v0 = model.vertexCreate(Vector2I.of(
+      -1000000,
+      1000000));
+    final RoomPolyVertexType v1 = model.vertexCreate(Vector2I.of(
+      -1000000,
+      -1000000));
+    final RoomPolyVertexType v2 = model.vertexCreate(Vector2I.of(
+      1000000,
+      1000000));
 
     this.expected.expect(RoomModelExceptionPolygonOutsideBounds.class);
     this.expected.expectMessage(StringContains.containsString("fit"));
-    model.polygonCreateV(v0, v1, v2);
+    model.polygonCreateVV(v0, v1, v2);
   }
 
   @Test
@@ -252,8 +301,9 @@ public abstract class RoomModelContract
     final RoomPolyVertexType v1 = model.vertexCreate(Vector2I.of(0, 0));
 
     this.expected.expect(RoomModelExceptionPolygonTooFewVertices.class);
-    this.expected.expectMessage(StringContains.containsString("must have at least three vertices"));
-    model.polygonCreateV(v0, v1);
+    this.expected.expectMessage(StringContains.containsString(
+      "must have at least three vertices"));
+    model.polygonCreateVV(v0, v1);
   }
 
   @Test
@@ -265,10 +315,14 @@ public abstract class RoomModelContract
     final RoomPolyVertexType v1 = model.vertexCreate(Vector2I.of(0, 0));
     final RoomPolyVertexType v2 = model.vertexCreate(Vector2I.of(1, 0));
 
-    final RoomPolygonType poly = model.polygonCreateV(v0, v1, v2);
+    final RoomPolygonType poly = model.polygonCreateVV(v0, v1, v2);
     Assert.assertTrue(model.polygons().contains(poly));
 
-    model.polygonDelete(poly);
+    model.polygonDelete(poly.id());
+    Assert.assertTrue(poly.deleted());
+    Assert.assertTrue(v0.deleted());
+    Assert.assertTrue(v1.deleted());
+    Assert.assertTrue(v2.deleted());
     Assert.assertFalse(model.polygons().contains(poly));
     this.checkModel(model);
   }
@@ -279,33 +333,7 @@ public abstract class RoomModelContract
     final RoomModelType model = this.emptyModel();
 
     this.expected.expect(RoomModelExceptionPolygonNonexistent.class);
-    this.expected.expectMessage(StringContains.containsString("does not belong to this model"));
-    model.polygonDelete(new RoomPolygonType()
-    {
-      @Override
-      public long id()
-      {
-        return 0L;
-      }
-
-      @Override
-      public AreaL bounds()
-      {
-        return AreasL.create(0L, 0L, 4L, 4L);
-      }
-
-      @Override
-      public List<RoomPolyEdgeType> edges()
-      {
-        return Collections.emptyList();
-      }
-
-      @Override
-      public List<RoomPolyVertexType> vertices()
-      {
-        return Collections.emptyList();
-      }
-    });
+    model.polygonDelete(RoomPolygonID.of(0L));
   }
 
   @Test
@@ -318,16 +346,28 @@ public abstract class RoomModelContract
     final RoomPolyVertexType v2 = model.vertexCreate(Vector2I.of(1, 0));
     final RoomPolyVertexType v3 = model.vertexCreate(Vector2I.of(1, 1));
 
-    final RoomPolygonType poly0 = model.polygonCreateV(v0, v1, v2);
-    final RoomPolygonType poly1 = model.polygonCreateV(v0, v2, v3);
+    final RoomPolygonType poly0 = model.polygonCreateVV(v0, v1, v2);
+    final RoomPolygonType poly1 = model.polygonCreateVV(v0, v2, v3);
     this.checkModel(model);
 
-    model.polygonDelete(poly1);
+    model.polygonDelete(poly1.id());
+    Assert.assertFalse(v0.deleted());
+    Assert.assertFalse(v1.deleted());
+    Assert.assertFalse(v2.deleted());
+    Assert.assertTrue(v3.deleted());
+    Assert.assertFalse(poly0.deleted());
+    Assert.assertTrue(poly1.deleted());
     Assert.assertTrue(model.polygons().contains(poly0));
     Assert.assertFalse(model.polygons().contains(poly1));
     this.checkModel(model);
 
-    model.polygonDelete(poly0);
+    model.polygonDelete(poly0.id());
+    Assert.assertTrue(v0.deleted());
+    Assert.assertTrue(v1.deleted());
+    Assert.assertTrue(v2.deleted());
+    Assert.assertTrue(v3.deleted());
+    Assert.assertTrue(poly0.deleted());
+    Assert.assertTrue(poly1.deleted());
     Assert.assertFalse(model.polygons().contains(poly0));
     Assert.assertFalse(model.polygons().contains(poly1));
     this.checkModel(model);

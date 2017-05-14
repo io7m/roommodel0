@@ -1,8 +1,8 @@
 package com.io7m.roommodel0;
 
 import com.io7m.jaffirm.core.Invariants;
+import com.io7m.jaffirm.core.Postconditions;
 import com.io7m.jfunctional.Pair;
-import com.io7m.jfunctional.Unit;
 import com.io7m.jnull.NullCheck;
 import com.io7m.jregions.core.unparameterized.areas.AreaL;
 import com.io7m.jregions.core.unparameterized.areas.AreasL;
@@ -12,11 +12,14 @@ import com.io7m.jspatial.api.quadtrees.QuadTreeReadableLType;
 import com.io7m.jspatial.implementation.QuadTreeL;
 import com.io7m.jtensors.core.unparameterized.vectors.Vector2D;
 import com.io7m.jtensors.core.unparameterized.vectors.Vector2I;
-import it.unimi.dsi.fastutil.objects.Reference2ReferenceOpenHashMap;
+import it.unimi.dsi.fastutil.longs.Long2ReferenceOpenHashMap;
+import it.unimi.dsi.fastutil.longs.Long2ReferenceRBTreeMap;
 import it.unimi.dsi.fastutil.objects.ReferenceArrayList;
+import it.unimi.dsi.fastutil.objects.ReferenceCollections;
 import it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet;
 import org.jgrapht.graph.SimpleGraph;
 
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
@@ -24,23 +27,52 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import static com.io7m.jfunctional.Unit.unit;
-
 public final class RoomModel implements RoomModelType
 {
   private final SimpleGraph<Vertex, Edge> vertex_connectivity;
-  private final Reference2ReferenceOpenHashMap<Polygon, Unit> polygons;
-  private final Set<RoomPolygonType> polygons_view;
+  private final Long2ReferenceRBTreeMap<Vertex> vertices;
+  private final Long2ReferenceRBTreeMap<Polygon> polygons;
+  private final Collection<RoomPolygonType> polygons_view;
   private final QuadTreeLType<Polygon> polygons_tree;
   private final AreaL bounds;
   private long vertex_ids;
-  private long poly_ids;
+  private long polygon_ids;
+
+  private RoomModel(
+    final AreaL in_bounds)
+  {
+    this.bounds = NullCheck.notNull(in_bounds, "Bounds");
+
+    this.vertices =
+      new Long2ReferenceRBTreeMap<>();
+    this.vertex_connectivity =
+      new SimpleGraph<>(Edge::new);
+
+    this.polygons =
+      new Long2ReferenceRBTreeMap<>();
+    this.polygons_view =
+      castCollection(ReferenceCollections.unmodifiable(this.polygons.values()));
+    this.polygons_tree =
+      QuadTreeL.create(
+        QuadTreeConfigurationL.of(
+          this.bounds, 16L, 16L, true));
+
+    this.vertex_ids = 0L;
+    this.polygon_ids = 0L;
+  }
 
   @SuppressWarnings("unchecked")
-  private static <A, B> QuadTreeReadableLType<B> cast(
+  private static <A, B> QuadTreeReadableLType<B> castQuadTree(
     final QuadTreeReadableLType<A> q)
   {
     return (QuadTreeReadableLType<B>) q;
+  }
+
+  @SuppressWarnings("unchecked")
+  private static <A, B> Collection<B> castCollection(
+    final Collection<A> q)
+  {
+    return (Collection<B>) q;
   }
 
   public static RoomModelType create(
@@ -49,47 +81,27 @@ public final class RoomModel implements RoomModelType
     return new RoomModel(bounds);
   }
 
-  private RoomModel(
-    final AreaL in_bounds)
-  {
-    this.bounds = NullCheck.notNull(in_bounds, "Bounds");
-
-    this.vertex_connectivity =
-      new SimpleGraph<>(Edge::new);
-    this.polygons =
-      new Reference2ReferenceOpenHashMap<>(32);
-    this.polygons_view =
-      Collections.unmodifiableSet(this.polygons.keySet());
-    this.polygons_tree =
-      QuadTreeL.create(
-        QuadTreeConfigurationL.of(
-          this.bounds, 16L, 16L, true));
-
-    this.vertex_ids = 0L;
-    this.poly_ids = 0L;
-  }
-
   private static List<Pair<Vertex, Vertex>> pairVertices(
-    final List<RoomPolyVertexType> vertices)
+    final ReferenceArrayList<Vertex> vertices)
   {
     final ReferenceArrayList<Pair<Vertex, Vertex>> edges =
       new ReferenceArrayList<>(vertices.size());
     for (int index = 0; index < vertices.size(); ++index) {
-      final Vertex v0 = (Vertex) vertices.get(index);
+      final Vertex v0 = vertices.get(index);
       final int index_next;
       if (index + 1 < vertices.size()) {
         index_next = index + 1;
       } else {
         index_next = 0;
       }
-      final Vertex v1 = (Vertex) vertices.get(index_next);
+      final Vertex v1 = vertices.get(index_next);
       edges.add(Pair.pair(v0, v1));
     }
     return edges;
   }
 
   private static void checkVerticesAreConvex(
-    final List<RoomPolyVertexType> vs)
+    final ReferenceArrayList<Vertex> vs)
   {
     final ReferenceArrayList<Vector2I> positions =
       new ReferenceArrayList<>(vs.size());
@@ -98,8 +110,7 @@ public final class RoomModel implements RoomModelType
     }
 
     if (!RoomPolygons.isConvex(positions)) {
-      throw new RoomModelExceptionPolygonNotConvex(
-        "Polygon is not convex");
+      throw new RoomModelExceptionPolygonNotConvex("Polygon is not convex");
     }
   }
 
@@ -108,30 +119,128 @@ public final class RoomModel implements RoomModelType
     final Vector2I position)
   {
     NullCheck.notNull(position, "Position");
+    return this.vertexCreateWithID(this.vertexIDFresh(), position);
+  }
 
-    final Vertex v = new Vertex(this.vertex_ids, position);
-    this.vertex_ids = Math.addExact(this.vertex_ids, 1L);
+  @Override
+  public RoomPolyVertexType vertexCreateWithID(
+    final RoomPolyVertexID vertex,
+    final Vector2I position)
+  {
+    NullCheck.notNull(vertex, "Vertex");
+    NullCheck.notNull(position, "Position");
+
+    if (this.vertices.containsKey(vertex.value())) {
+      throw new RoomModelExceptionVertexDuplicate(
+        "Vertex already exists with the given ID");
+    }
+
+    final Vertex v = new Vertex(vertex, position);
     this.vertex_connectivity.addVertex(v);
+    this.vertices.put(v.id.value(), v);
     return v;
   }
 
   @Override
-  public RoomPolygonType polygonCreate(
-    final List<RoomPolyVertexType> poly_vertices)
+  public void vertexSetPosition(
+    final RoomPolyVertexID vertex_id,
+    final Vector2I position)
   {
-    NullCheck.notNull(poly_vertices, "Vertices");
+    NullCheck.notNull(vertex_id, "Vertex");
+    NullCheck.notNull(position, "Position");
 
-    if (poly_vertices.size() < 3) {
+    final Vertex v = this.checkVertexExists(vertex_id);
+
+    final Long2ReferenceOpenHashMap<AreaL> bounds_by_polygon =
+      new Long2ReferenceOpenHashMap<>(v.polygons.size());
+
+    for (final Polygon p : v.polygons) {
+      final List<Vector2I> pv =
+        p.vertices.stream().map(vv -> {
+          if (Objects.equals(vv, v)) {
+            return position;
+          }
+          return vv.position;
+        }).collect(Collectors.toList());
+
+      if (!RoomPolygons.isConvex(pv)) {
+        final StringBuilder sb = new StringBuilder(128);
+        sb.append("Setting vertex position would make polygon non-convex.");
+        sb.append(System.lineSeparator());
+        sb.append("  Vertex:   ");
+        sb.append(vertex_id.value());
+        sb.append(System.lineSeparator());
+        sb.append("  Position: ");
+        sb.append(position);
+        sb.append(System.lineSeparator());
+        sb.append("  Polygon: ");
+        sb.append(p);
+        sb.append(System.lineSeparator());
+        throw new RoomModelExceptionPolygonNotConvex(sb.toString());
+      }
+
+      final AreaL new_bounds = RoomPolygons.bounds(pv);
+      if (!AreasL.contains(this.bounds, new_bounds)) {
+        final StringBuilder sb = new StringBuilder(128);
+        sb.append("Setting vertex position would make polygon exceed bounds.");
+        sb.append(System.lineSeparator());
+        sb.append("  Vertex:   ");
+        sb.append(vertex_id.value());
+        sb.append(System.lineSeparator());
+        sb.append("  Position: ");
+        sb.append(position);
+        sb.append(System.lineSeparator());
+        sb.append("  Polygon: ");
+        sb.append(p);
+        sb.append(System.lineSeparator());
+        throw new RoomModelExceptionPolygonNotConvex(sb.toString());
+      }
+
+      bounds_by_polygon.put(p.id.value(), new_bounds);
+    }
+
+    v.position = position;
+    for (final Polygon p : v.polygons) {
+      this.polygons_tree.remove(p);
+      p.bounds = bounds_by_polygon.get(p.id.value());
+      final boolean inserted = this.polygons_tree.insert(p, p.bounds);
+      Postconditions.checkPostcondition(
+        inserted, "Polygon must have been inserted");
+    }
+  }
+
+  @Override
+  public RoomPolygonType polygonCreate(
+    final List<RoomPolyVertexID> poly_vertices)
+  {
+    return this.polygonCreateWithID(this.polygonIDFresh(), poly_vertices);
+  }
+
+  @Override
+  public RoomPolygonType polygonCreateWithID(
+    final RoomPolygonID id,
+    final List<RoomPolyVertexID> vids)
+  {
+    NullCheck.notNull(id, "ID");
+    NullCheck.notNull(vids, "Vertices");
+
+    if (this.polygons.containsKey(id.value())) {
+      throw new RoomModelExceptionPolygonDuplicate(
+        "Polygon already exists with the given ID");
+    }
+
+    if (vids.size() < 3) {
       throw new RoomModelExceptionPolygonTooFewVertices(
         "Polygon must have at least three vertices");
     }
 
-    this.checkVerticesExist(poly_vertices);
+    final ReferenceArrayList<Vertex> poly_vertices =
+      this.checkVerticesExist(vids);
     checkVerticesAreConvex(poly_vertices);
 
     final List<Pair<Vertex, Vertex>> edge_pairs = pairVertices(poly_vertices);
-    final ReferenceArrayList<Edge> edges = new ReferenceArrayList<>(
-      poly_vertices.size());
+    final ReferenceArrayList<Edge> edges =
+      new ReferenceArrayList<>(poly_vertices.size());
     final ReferenceOpenHashSet<Polygon> connected_polygons = new ReferenceOpenHashSet<>();
     for (int index = 0; index < poly_vertices.size(); ++index) {
       final Vertex v0 = edge_pairs.get(index).getLeft();
@@ -157,14 +266,12 @@ public final class RoomModel implements RoomModelType
         "Polygon cannot fit into the room");
     }
 
-    final Polygon poly = new Polygon(this.poly_ids, poly_bounds);
+    final Polygon poly = new Polygon(id, poly_bounds);
     final boolean inserted = this.polygons_tree.insert(poly, poly_bounds);
     Invariants.checkInvariant(inserted, "Polygon must have been inserted");
 
-    this.poly_ids = Math.addExact(this.poly_ids, 1L);
-
     for (int index = 0; index < poly_vertices.size(); ++index) {
-      poly.vertices.add((Vertex) poly_vertices.get(index));
+      poly.vertices.add(poly_vertices.get(index));
     }
 
     for (int index = 0; index < edges.size(); ++index) {
@@ -176,17 +283,17 @@ public final class RoomModel implements RoomModelType
       poly.edges.add(edge);
     }
 
-    this.polygons.put(poly, unit());
+    this.polygons.put(poly.id.value(), poly);
     return poly;
   }
 
   @Override
   public void polygonDelete(
-    final RoomPolygonType p)
+    final RoomPolygonID pid)
   {
-    NullCheck.notNull(p, "Polygon");
+    NullCheck.notNull(pid, "Polygon ID");
 
-    final Polygon poly = this.checkPolygonExists(p);
+    final Polygon poly = this.checkPolygonExists(pid);
 
     final ReferenceOpenHashSet<Vertex> vertices_delete =
       new ReferenceOpenHashSet<>();
@@ -207,48 +314,94 @@ public final class RoomModel implements RoomModelType
 
     for (final Vertex v : vertices_delete) {
       this.vertex_connectivity.removeVertex(v);
+      this.vertices.remove(v.id.value());
+      v.deleted = true;
     }
 
     this.polygons_tree.remove(poly);
-    this.polygons.remove(poly);
+    this.polygons.remove(poly.id.value());
+    poly.deleted = true;
+  }
+
+  private RoomPolygonID polygonIDFresh()
+  {
+    final RoomPolygonID id = RoomPolygonID.of(this.polygon_ids);
+
+    final long last_key;
+    if (!this.polygons.isEmpty()) {
+      last_key = this.polygons.lastLongKey();
+    } else {
+      last_key = Long.MIN_VALUE;
+    }
+
+    this.polygon_ids =
+      Math.max(
+        Math.addExact(last_key, 1L),
+        Math.addExact(this.polygon_ids, 1L));
+
+    Postconditions.checkPostcondition(
+      !this.polygons.containsKey(id.value()),
+      "Polygon ID must be fresh");
+    return id;
+  }
+
+  private RoomPolyVertexID vertexIDFresh()
+  {
+    final RoomPolyVertexID id = RoomPolyVertexID.of(this.vertex_ids);
+
+    final long last_key;
+    if (!this.vertices.isEmpty()) {
+      last_key = this.vertices.lastLongKey();
+    } else {
+      last_key = Long.MIN_VALUE;
+    }
+
+    this.vertex_ids =
+      Math.max(
+        Math.addExact(last_key, 1L),
+        Math.addExact(this.vertex_ids, 1L));
+
+    Postconditions.checkPostcondition(
+      !this.vertices.containsKey(id.value()),
+      "Vertex ID must be fresh");
+    return id;
   }
 
   private Polygon checkPolygonExists(
-    final RoomPolygonType polygon)
+    final RoomPolygonID pid)
   {
-    if (polygon instanceof Polygon) {
-      if (this.polygons.containsKey(polygon)) {
-        return (Polygon) polygon;
-      }
+    if (this.polygons.containsKey(pid.value())) {
+      return this.polygons.get(pid.value());
     }
 
     throw new RoomModelExceptionPolygonNonexistent(
-      String.format("Polygon %s does not belong to this model", polygon));
+      String.format("Polygon %s does not exist", Long.valueOf(pid.value())));
   }
 
-  private void checkVerticesExist(
-    final List<RoomPolyVertexType> vertices)
+  private ReferenceArrayList<Vertex> checkVerticesExist(
+    final List<RoomPolyVertexID> vids)
   {
-    for (int index = 0; index < vertices.size(); ++index) {
-      this.checkVertexExists(vertices.get(index));
+    final ReferenceArrayList<Vertex> vertices =
+      new ReferenceArrayList<>(vids.size());
+    for (int index = 0; index < vids.size(); ++index) {
+      vertices.add(this.checkVertexExists(vids.get(index)));
     }
+    return vertices;
   }
 
-  private void checkVertexExists(
-    final RoomPolyVertexType v)
+  private Vertex checkVertexExists(
+    final RoomPolyVertexID v)
   {
-    if (v instanceof Vertex) {
-      if (this.vertex_connectivity.containsVertex((Vertex) v)) {
-        return;
-      }
+    if (this.vertices.containsKey(v.value())) {
+      return this.vertices.get(v.value());
     }
 
     throw new RoomModelExceptionVertexNonexistent(
-      String.format("Vertex %s does not belong to this model", v));
+      String.format("Vertex %s does not exist", v));
   }
 
   @Override
-  public Set<RoomPolygonType> polygons()
+  public Collection<RoomPolygonType> polygons()
   {
     return this.polygons_view;
   }
@@ -256,7 +409,7 @@ public final class RoomModel implements RoomModelType
   @Override
   public QuadTreeReadableLType<RoomPolygonType> polygonTree()
   {
-    return cast(this.polygons_tree);
+    return castQuadTree(this.polygons_tree);
   }
 
   @Override
@@ -283,26 +436,173 @@ public final class RoomModel implements RoomModelType
     return Optional.empty();
   }
 
+  @Override
+  public Optional<RoomPolygonType> polygonFind(
+    final Vector2I position)
+  {
+    NullCheck.notNull(position, "position");
+
+    final ReferenceOpenHashSet<Polygon> results =
+      new ReferenceOpenHashSet<>();
+    final AreaL area = AreasL.create(
+      (long) (position.x() - 1),
+      (long) (position.y() - 1),
+      2L,
+      2L);
+    this.polygons_tree.overlappedBy(area, results);
+
+    for (final Polygon poly : results) {
+      final List<Vector2I> points =
+        poly.vertices.stream()
+          .map(Vertex::position)
+          .collect(Collectors.toList());
+
+      if (RoomPolygons.containsPoint(points, position)) {
+        return Optional.of(poly);
+      }
+    }
+
+    return Optional.empty();
+  }
+
+  @Override
+  public List<String> check()
+  {
+    final ReferenceArrayList<String> errors = new ReferenceArrayList<>();
+
+    for (final Polygon p : this.polygons.values()) {
+      if (p.deleted) {
+        final StringBuilder sb = new StringBuilder(128);
+        sb.append("Polygon ");
+        sb.append(p);
+        sb.append(": Polygon has been deleted ");
+        errors.add(sb.toString());
+      }
+
+      for (final Vertex v : p.vertices) {
+        for (final Polygon q : v.polygons) {
+          if (!this.polygons.containsKey(q.id.value())) {
+            final StringBuilder sb = new StringBuilder(128);
+            sb.append("Polygon ");
+            sb.append(p);
+            sb.append(": Vertex ");
+            sb.append(v);
+            sb.append(" references nonexistent polygon ");
+            sb.append(q);
+            errors.add(sb.toString());
+          } else {
+            final Polygon r = this.polygons.get(q.id.value());
+            if (!Objects.equals(r, q)) {
+              final StringBuilder sb = new StringBuilder(128);
+              sb.append("Polygon ");
+              sb.append(p);
+              sb.append(": Vertex ");
+              sb.append(v);
+              sb.append(" references a polygon ");
+              sb.append(q);
+              sb.append(" but a polygon exists with the same id ");
+              sb.append(r);
+              errors.add(sb.toString());
+            }
+          }
+        }
+
+        if (!this.vertex_connectivity.containsVertex(v)) {
+          final StringBuilder sb = new StringBuilder(128);
+          sb.append("Polygon ");
+          sb.append(p);
+          sb.append(": Nonexistent vertex ");
+          sb.append(v);
+          errors.add(sb.toString());
+        }
+        final long vx = (long) v.position.x();
+        final long vy = (long) v.position.y();
+        if (!AreasL.containsPoint(this.bounds, vx, vy)) {
+          final StringBuilder sb = new StringBuilder(128);
+          sb.append("Polygon ");
+          sb.append(p);
+          sb.append(": Vertex ");
+          sb.append(v);
+          sb.append(" has out-of-bounds position (");
+          sb.append(vx);
+          sb.append(", ");
+          sb.append(vy);
+          sb.append(")");
+          errors.add(sb.toString());
+        }
+
+        if (v.deleted) {
+          final StringBuilder sb = new StringBuilder(128);
+          sb.append("Polygon ");
+          sb.append(p);
+          sb.append(": Vertex ");
+          sb.append(v);
+          sb.append(" has been deleted");
+          errors.add(sb.toString());
+        }
+      }
+
+      for (final Edge e : p.edges) {
+        if (!this.vertex_connectivity.containsVertex(e.vertex0)) {
+          final StringBuilder sb = new StringBuilder(128);
+          sb.append("Polygon ");
+          sb.append(p);
+          sb.append(": Edge references nonexistent vertex ");
+          sb.append(e.vertex0);
+          errors.add(sb.toString());
+        }
+        if (!this.vertex_connectivity.containsVertex(e.vertex1)) {
+          final StringBuilder sb = new StringBuilder(128);
+          sb.append("Polygon ");
+          sb.append(p);
+          sb.append(": Edge references nonexistent vertex ");
+          sb.append(e.vertex1);
+          errors.add(sb.toString());
+        }
+
+        for (final Polygon q : e.polygons) {
+          if (!this.polygons.containsKey(q.id.value())) {
+            final StringBuilder sb = new StringBuilder(128);
+            sb.append("Polygon ");
+            sb.append(p);
+            sb.append(": Edge references nonexistent polygon ");
+            sb.append(q);
+            errors.add(sb.toString());
+          }
+        }
+      }
+    }
+
+    for (final Vertex v : this.vertex_connectivity.vertexSet()) {
+      boolean referenced = false;
+      for (final Polygon p : this.polygons.values()) {
+        referenced = referenced || p.vertices.contains(v);
+      }
+
+      if (!referenced) {
+        final StringBuilder sb = new StringBuilder(128);
+        sb.append("Vertex ");
+        sb.append(v);
+        sb.append(": Vertex is not referenced by any polygon ");
+        errors.add(sb.toString());
+      }
+    }
+
+    return errors;
+  }
+
   private static final class Polygon implements RoomPolygonType
   {
     private final ReferenceArrayList<Edge> edges;
     private final List<RoomPolyEdgeType> edges_view;
     private final ReferenceArrayList<Vertex> vertices;
     private final List<RoomPolyVertexType> vertices_view;
-    private final long id;
-    private final AreaL bounds;
-
-    @Override
-    public String toString()
-    {
-      final StringBuilder sb = new StringBuilder("[Polygon ");
-      sb.append(this.id);
-      sb.append("]");
-      return sb.toString();
-    }
+    private final RoomPolygonID id;
+    private AreaL bounds;
+    private boolean deleted;
 
     Polygon(
-      final long in_id,
+      final RoomPolygonID in_id,
       final AreaL in_bounds)
     {
       this.id = in_id;
@@ -314,7 +614,16 @@ public final class RoomModel implements RoomModelType
     }
 
     @Override
-    public long id()
+    public String toString()
+    {
+      final StringBuilder sb = new StringBuilder("[Polygon ");
+      sb.append(this.id);
+      sb.append("]");
+      return sb.toString();
+    }
+
+    @Override
+    public RoomPolygonID id()
     {
       return this.id;
     }
@@ -335,6 +644,12 @@ public final class RoomModel implements RoomModelType
     public List<RoomPolyVertexType> vertices()
     {
       return this.vertices_view;
+    }
+
+    @Override
+    public boolean deleted()
+    {
+      return this.deleted;
     }
   }
 
@@ -412,115 +727,22 @@ public final class RoomModel implements RoomModelType
     }
   }
 
-  @Override
-  public List<String> check()
-  {
-    final ReferenceArrayList<String> errors = new ReferenceArrayList<>();
-
-    for (final Polygon p : this.polygons.keySet()) {
-      for (final Vertex v : p.vertices) {
-        for (final Polygon q : v.polygons) {
-          if (!this.polygons.containsKey(q)) {
-            final StringBuilder sb = new StringBuilder(128);
-            sb.append("Polygon ");
-            sb.append(p);
-            sb.append(": Vertex ");
-            sb.append(v);
-            sb.append(" references nonexistent polygon ");
-            sb.append(q);
-            errors.add(sb.toString());
-          }
-        }
-
-        if (!this.vertex_connectivity.containsVertex(v)) {
-          final StringBuilder sb = new StringBuilder(128);
-          sb.append("Polygon ");
-          sb.append(p);
-          sb.append(": Nonexistent vertex ");
-          sb.append(v);
-          errors.add(sb.toString());
-        }
-        final long vx = (long) v.position.x();
-        final long vy = (long) v.position.y();
-        if (!AreasL.containsPoint(this.bounds, vx, vy)) {
-          final StringBuilder sb = new StringBuilder(128);
-          sb.append("Polygon ");
-          sb.append(p);
-          sb.append(": Vertex ");
-          sb.append(v);
-          sb.append(" has out-of-bounds position (");
-          sb.append(vx);
-          sb.append(", ");
-          sb.append(vy);
-          sb.append(")");
-          errors.add(sb.toString());
-        }
-      }
-
-      for (final Edge e : p.edges) {
-        if (!this.vertex_connectivity.containsVertex(e.vertex0)) {
-          final StringBuilder sb = new StringBuilder(128);
-          sb.append("Polygon ");
-          sb.append(p);
-          sb.append(": Edge references nonexistent vertex ");
-          sb.append(e.vertex0);
-          errors.add(sb.toString());
-        }
-        if (!this.vertex_connectivity.containsVertex(e.vertex1)) {
-          final StringBuilder sb = new StringBuilder(128);
-          sb.append("Polygon ");
-          sb.append(p);
-          sb.append(": Edge references nonexistent vertex ");
-          sb.append(e.vertex1);
-          errors.add(sb.toString());
-        }
-
-        for (final Polygon q : e.polygons) {
-          if (!this.polygons.containsKey(q)) {
-            final StringBuilder sb = new StringBuilder(128);
-            sb.append("Polygon ");
-            sb.append(p);
-            sb.append(": Edge references nonexistent polygon ");
-            sb.append(q);
-            errors.add(sb.toString());
-          }
-        }
-      }
-    }
-
-    for (final Vertex v : this.vertex_connectivity.vertexSet()) {
-      boolean referenced = false;
-      for (final Polygon p : this.polygons.keySet()) {
-        referenced = referenced || p.vertices.contains(v);
-      }
-
-      if (!referenced) {
-        final StringBuilder sb = new StringBuilder(128);
-        sb.append("Vertex ");
-        sb.append(v);
-        sb.append(": Vertex is not referenced by any polygon ");
-        errors.add(sb.toString());
-      }
-    }
-
-    return errors;
-  }
-
   private static final class Vertex implements RoomPolyVertexType
   {
-    private final Vector2I position;
     private final ReferenceOpenHashSet<Polygon> polygons;
     private final Set<RoomPolygonType> polygons_view;
-    private final long id;
+    private final RoomPolyVertexID id;
+    private Vector2I position;
+    private boolean deleted;
 
     private Vertex(
-      final long in_id,
+      final RoomPolyVertexID in_id,
       final Vector2I in_position)
     {
+      this.id = NullCheck.notNull(in_id, "ID");
       this.position = NullCheck.notNull(in_position, "Position");
       this.polygons = new ReferenceOpenHashSet<>(4);
       this.polygons_view = Collections.unmodifiableSet(this.polygons);
-      this.id = in_id;
     }
 
     @Override
@@ -533,7 +755,7 @@ public final class RoomModel implements RoomModelType
     }
 
     @Override
-    public long id()
+    public RoomPolyVertexID id()
     {
       return this.id;
     }
@@ -548,6 +770,12 @@ public final class RoomModel implements RoomModelType
     public Vector2I position()
     {
       return this.position;
+    }
+
+    @Override
+    public boolean deleted()
+    {
+      return this.deleted;
     }
   }
 }

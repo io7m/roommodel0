@@ -6,9 +6,11 @@ import java.util.List;
 
 public interface RoomPolygonType
 {
-  long id();
+  RoomPolygonID id();
 
   AreaL bounds();
+
+  boolean deleted();
 
   List<RoomPolyEdgeType> edges();
 

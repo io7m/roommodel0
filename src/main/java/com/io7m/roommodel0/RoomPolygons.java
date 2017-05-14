@@ -132,4 +132,26 @@ public final class RoomPolygons
     }
     return AreaL.of((long) x_min, (long) x_max, (long) y_min, (long) y_max);
   }
+
+  static boolean containsPoint(
+    final List<Vector2I> points,
+    final Vector2I point)
+  {
+    boolean result = false;
+    int i;
+    int j;
+    for (i = 0, j = points.size() - 1; i < points.size(); j = i++) {
+      final Vector2I p0 = points.get(i);
+      final Vector2I p1 = points.get(j);
+      if (((p0.y() > point.y()) != (p1.y() > point.y()))) {
+        final int p1x_p0x_delta = p1.x() - p0.x();
+        final int p1y_p0y_delta = p1.y() - p0.y();
+        final int py_p0y_delta = point.y() - p0.y();
+        if ((point.x() < (((p1x_p0x_delta * py_p0y_delta) / p1y_p0y_delta) + p0.x()))) {
+          result = !result;
+        }
+      }
+    }
+    return result;
+  }
 }

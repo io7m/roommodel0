@@ -1,6 +1,7 @@
 package com.io7m.roommodel0;
 
-public final class RoomModelExceptionVertexNonexistent extends RoomModelException
+public final class RoomModelExceptionVertexNonexistent extends
+  RoomModelException
 {
   public RoomModelExceptionVertexNonexistent(
     final String message)

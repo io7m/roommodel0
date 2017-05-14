@@ -1,11 +1,12 @@
 package com.io7m.roommodel0;
 
+import com.io7m.jtensors.core.unparameterized.vectors.Vector2I;
+import it.unimi.dsi.fastutil.objects.ReferenceArrayList;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
-
-import static com.io7m.jnull.NullCheck.notNull;
+import java.util.Optional;
 
 public final class RoomModelOpPolygonCreate implements RoomModelOpType<RoomPolygonType>
 {
@@ -15,38 +16,51 @@ public final class RoomModelOpPolygonCreate implements RoomModelOpType<RoomPolyg
     LOG = LoggerFactory.getLogger(RoomModelOpPolygonCreate.class);
   }
 
-  private final List<RoomPolyVertexType> vertices;
-  private RoomPolygonType polygon;
+  private final ReferenceArrayList<Vector2I> positions;
+  private RoomPolygonID polygon;
 
-  public RoomModelOpPolygonCreate(
-    final List<RoomPolyVertexType> in_vertices)
+  RoomModelOpPolygonCreate(
+    final List<Vector2I> in_positions)
   {
-    this.vertices = notNull(in_vertices, "Vertices");
+    this.positions = new ReferenceArrayList<>(in_positions);
   }
 
-  public static RoomModelOpPolygonCreate createPolygon(
-    final List<RoomPolyVertexType> in_vertices)
+  @Override
+  public String description()
   {
-    return new RoomModelOpPolygonCreate(in_vertices);
+    return "Create Polygon " + this.polygon.value();
   }
 
   @Override
   public RoomPolygonType evaluate(
     final RoomModelType model)
   {
-    notNull(model, "Model");
+    LOG.debug("create {}", this.positions);
 
-    LOG.debug("createPolygon: {}", this.vertices);
+    final ReferenceArrayList<RoomPolyVertexID> vertices =
+      new ReferenceArrayList<>(this.positions.size());
+    for (final Vector2I position : this.positions) {
+      final Optional<RoomPolyVertexType> exists_opt =
+        model.vertexFind(position);
+      if (exists_opt.isPresent()) {
+        vertices.add(exists_opt.get().id());
+      } else {
+        vertices.add(model.vertexCreate(position).id());
+      }
+    }
 
-    this.polygon = model.polygonCreate(this.vertices);
-    return this.polygon;
+    final RoomPolygonType p = model.polygonCreate(vertices);
+    LOG.debug("created {}", p.id());
+    this.polygon = p.id();
+    return p;
   }
 
   @Override
   public void undo(
     final RoomModelType model)
   {
-    notNull(model, "Model");
+    LOG.debug("undo create {}", this.polygon);
     model.polygonDelete(this.polygon);
+    LOG.debug("deleted {}", this.polygon);
   }
 }

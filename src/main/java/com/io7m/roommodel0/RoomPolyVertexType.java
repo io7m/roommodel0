@@ -6,7 +6,9 @@ import java.util.Set;
 
 public interface RoomPolyVertexType
 {
-  long id();
+  RoomPolyVertexID id();
+
+  boolean deleted();
 
   Set<RoomPolygonType> polygons();
 

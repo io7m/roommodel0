@@ -1,6 +1,7 @@
 package com.io7m.roommodel0;
 
-public final class RoomModelExceptionPolygonTooFewVertices extends RoomModelException
+public final class RoomModelExceptionPolygonTooFewVertices extends
+  RoomModelException
 {
   public RoomModelExceptionPolygonTooFewVertices(
     final String message)

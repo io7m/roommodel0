@@ -6,13 +6,14 @@ import io.reactivex.subjects.PublishSubject;
 import it.unimi.dsi.fastutil.objects.ReferenceArrayList;
 
 import java.util.List;
+import java.util.Optional;
 
 public final class RoomModelOpExecutor implements RoomModelOpExecutorType
 {
   private final int stack_max;
   private final RoomModelType model;
-  private List<RoomModelOpType<?>> undo_stack;
   private final PublishSubject<RoomModelChanged> observable;
+  private List<RoomModelOpType<?>> undo_stack;
 
   public RoomModelOpExecutor(
     final RoomModelType in_model,
@@ -46,8 +47,17 @@ public final class RoomModelOpExecutor implements RoomModelOpExecutorType
     }
 
     this.undo_stack.add(op);
-    this.observable.onNext(RoomModelChanged.of(this.undoAvailable()));
+    this.observable.onNext(RoomModelChanged.of(this.availability()));
     return result;
+  }
+
+  private Optional<RoomModelUndoAvailability> availability()
+  {
+    if (this.undoAvailable()) {
+      return Optional.of(RoomModelUndoAvailability.of(
+        this.undo_stack.get(this.undoStackSize() - 1).description()));
+    }
+    return Optional.empty();
   }
 
   @Override
@@ -76,7 +86,7 @@ public final class RoomModelOpExecutor implements RoomModelOpExecutorType
       final RoomModelOpType<?> op = this.undo_stack.get(last);
       op.undo(this.model);
       this.undo_stack.remove(last);
-      this.observable.onNext(RoomModelChanged.of(this.undoAvailable()));
+      this.observable.onNext(RoomModelChanged.of(this.availability()));
     }
   }
 }

@@ -1,6 +1,7 @@
 package com.io7m.roommodel0;
 
-public final class RoomModelExceptionPolygonOutsideBounds extends RoomModelException
+public final class RoomModelExceptionPolygonOutsideBounds extends
+  RoomModelException
 {
   public RoomModelExceptionPolygonOutsideBounds(
     final String message)

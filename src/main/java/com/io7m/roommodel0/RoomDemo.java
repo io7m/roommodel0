@@ -55,6 +55,7 @@ import java.awt.event.MouseMotionListener;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 import static com.io7m.jnull.NullCheck.notNull;
@@ -63,6 +64,7 @@ import static java.awt.event.InputEvent.CTRL_DOWN_MASK;
 public final class RoomDemo
 {
   private static final Logger LOG;
+  private static int GRID_SNAP = 32;
 
   static {
     LOG = LoggerFactory.getLogger(RoomDemo.class);
@@ -85,34 +87,6 @@ public final class RoomDemo
       0.0f);
   }
 
-  private static void drawPoints(
-    final Graphics2D gg,
-    final List<Vector2I> pl,
-    final Color color_first,
-    final Color color_rest)
-  {
-    for (int index = 0; index < pl.size(); ++index) {
-      final Vector2I pc = pl.get(index);
-
-      gg.setPaint(color_rest);
-      if (index + 1 < pl.size()) {
-        final Vector2I pn = pl.get(index + 1);
-        gg.drawLine(pc.x(), pc.y(), pn.x(), pn.y());
-      }
-
-      gg.setPaint(index == 0 ? color_first : color_rest);
-      gg.fillOval(pc.x() - 4, pc.y() - 4, 8, 8);
-    }
-
-    if (pl.size() > 1) {
-      final Vector2I first = pl.get(0);
-      final Vector2I last = pl.get(pl.size() - 1);
-      gg.drawLine(first.x(), first.y(), last.x(), last.y());
-    }
-  }
-
-  private static int GRID_SNAP = 32;
-
   private static int snap(
     final int v,
     final int r)
@@ -120,10 +94,28 @@ public final class RoomDemo
     return (int) (Math.floor((double) v / (double) r) * (double) r);
   }
 
+  public static void main(
+    final String[] args)
+  {
+    SwingUtilities.invokeLater(() -> {
+      final PolygonWindow window = new PolygonWindow();
+      window.pack();
+      window.setVisible(true);
+      window.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
+    });
+  }
+
+  private interface EditingOperationType
+    extends MouseListener, MouseMotionListener
+  {
+    void paint(Graphics2D g);
+  }
+
   private static final class PolygonCanvas extends JPanel
   {
     private final RoomModelOpExecutorType model_executor;
     private final RoomEditingModelType model_editing;
+    private final RoomModelType model;
     private Vector2I mouse;
     private Vector2I mouse_snap;
     private EditingOperationType edit_op;
@@ -134,43 +126,13 @@ public final class RoomDemo
       this.mouse = Vectors2I.zero();
       this.mouse_snap = Vectors2I.zero();
 
-      final RoomModelType m = RoomModel.create(
-        AreaL.of(-2048L, 2048L, -2048L, 2048L));
-
-      {
-        final RoomPolyVertexType v0 =
-          m.vertexCreate(Vector2I.of(14 * 32, 3 * 32));
-        final RoomPolyVertexType v1 =
-          m.vertexCreate(Vector2I.of(5 * 32, 5 * 32));
-        final RoomPolyVertexType v2 =
-          m.vertexCreate(Vector2I.of(12 * 32, 12 * 32));
-        final RoomPolyVertexType v3 =
-          m.vertexCreate(Vector2I.of(18 * 32, 7 * 32));
-        final RoomPolyVertexType v4 =
-          m.vertexCreate(Vector2I.of(20 * 32, 4 * 32));
-
-        final RoomPolygonType p0 = m.polygonCreateV(v0, v1, v2);
-        final RoomPolygonType p1 = m.polygonCreateV(v0, v2, v3);
-        final RoomPolygonType p2 = m.polygonCreateV(v0, v3, v4);
-      }
-
-      {
-        final RoomPolyVertexType v0 =
-          m.vertexCreate(Vector2I.of(2 * 32, 2 * 32));
-        final RoomPolyVertexType v1 =
-          m.vertexCreate(Vector2I.of(2 * 32, 4 * 32));
-        final RoomPolyVertexType v2 =
-          m.vertexCreate(Vector2I.of(4 * 32, 4 * 32));
-
-        final RoomPolygonType p3 = m.polygonCreateV(v0, v1, v2);
-      }
-
-      {
-        m.check().forEach(e -> LOG.error("{}", e));
-      }
-
-      this.model_executor = new RoomModelOpExecutor(m, 32);
-      this.model_editing = RoomEditingModel.create(this.model_executor);
+      this.model =
+        RoomModel.create(
+          AreaL.of(-2048L, 2048L, -2048L, 2048L));
+      this.model_executor =
+        new RoomModelOpExecutor(this.model, 32);
+      this.model_editing =
+        RoomEditingModel.create(this.model_executor);
 
       this.addMouseMotionListener(new MouseAdapter()
       {
@@ -184,57 +146,7 @@ public final class RoomDemo
       this.model_executor.observable().subscribe(e -> this.repaint());
     }
 
-    private void onMouseMoved(
-      final int x,
-      final int y)
-    {
-      LOG.trace("onMouseMoved: {} {}", Integer.valueOf(x), Integer.valueOf(y));
-      this.mouse = Vector2I.of(x, y);
-      this.mouse_snap = Vector2I.of(
-        snap(x + (GRID_SNAP / 2), GRID_SNAP),
-        snap(y + (GRID_SNAP / 2), GRID_SNAP));
-
-      this.repaint();
-    }
-
-    @Override
-    public void paint(
-      final Graphics g)
-    {
-      super.paint(g);
-
-      final Graphics2D gg = (Graphics2D) g;
-      gg.setPaint(Color.WHITE);
-      gg.fillRect(0, 0, this.getWidth(), this.getHeight());
-
-      this.paintModel(gg);
-
-      {
-        final EditingOperationType op = this.edit_op;
-        if (op != null) {
-          op.paint(gg);
-        }
-      }
-
-      gg.setPaint(Color.GREEN);
-      gg.fillOval(this.mouse.x() - 4, this.mouse.y() - 4, 8, 8);
-
-      gg.setPaint(Color.RED);
-      gg.fillOval(this.mouse_snap.x() - 4, this.mouse_snap.y() - 4, 8, 8);
-    }
-
-    private void paintModel(final Graphics2D g)
-    {
-      final RoomModelReadableType m = this.model_executor.model();
-
-      this.paintQuadTree(g, m.polygonTree());
-
-      for (final RoomPolygonType p : m.polygons()) {
-        this.paintPolygon(g, p);
-      }
-    }
-
-    private void paintQuadTree(
+    private static void paintQuadTree(
       final Graphics2D g,
       final QuadTreeReadableLType<RoomPolygonType> q)
     {
@@ -256,7 +168,7 @@ public final class RoomDemo
       }
     }
 
-    private void paintPolygon(
+    private static void paintPolygon(
       final Graphics2D g,
       final RoomPolygonType p)
     {
@@ -328,7 +240,10 @@ public final class RoomDemo
         final RoomPolyVertexType v = vs.get(index);
         final Vector2I pos = v.position();
         g.fillOval(pos.x() - 4, pos.y() - 4, 8, 8);
-        g.drawString("V" + Long.toString(v.id()), pos.x() - 8, pos.y() - 8);
+        g.drawString(
+          "V" + Long.toString(v.id().value()),
+          pos.x() - 8,
+          pos.y() - 8);
       }
 
       final Vector2D center =
@@ -339,14 +254,66 @@ public final class RoomDemo
             .collect(Collectors.toList()));
 
       g.drawString(
-        "P" + Long.toString(p.id()),
+        "P" + Long.toString(p.id().value()),
         (int) center.x(),
         (int) center.y());
+    }
+
+    private void onMouseMoved(
+      final int x,
+      final int y)
+    {
+      LOG.trace("onMouseMoved: {} {}", Integer.valueOf(x), Integer.valueOf(y));
+      this.mouse = Vector2I.of(x, y);
+      this.mouse_snap = Vector2I.of(
+        snap(x + (GRID_SNAP / 2), GRID_SNAP),
+        snap(y + (GRID_SNAP / 2), GRID_SNAP));
+
+      this.repaint();
+    }
+
+    @Override
+    public void paint(
+      final Graphics g)
+    {
+      super.paint(g);
+
+      final Graphics2D gg = (Graphics2D) g;
+      gg.setPaint(Color.WHITE);
+      gg.fillRect(0, 0, this.getWidth(), this.getHeight());
+
+      this.paintModel(gg);
+
+      {
+        final EditingOperationType op = this.edit_op;
+        if (op != null) {
+          op.paint(gg);
+        }
+      }
+
+      gg.setPaint(Color.GREEN);
+      gg.fillOval(this.mouse.x() - 4, this.mouse.y() - 4, 8, 8);
+
+      gg.setPaint(Color.RED);
+      gg.fillOval(this.mouse_snap.x() - 4, this.mouse_snap.y() - 4, 8, 8);
+    }
+
+    private void paintModel(final Graphics2D g)
+    {
+      final RoomModelReadableType m = this.model_executor.model();
+
+      paintQuadTree(g, m.polygonTree());
+
+      for (final RoomPolygonType p : m.polygons()) {
+        paintPolygon(g, p);
+      }
     }
 
     public void undo()
     {
       this.model_executor.undo();
+      final List<String> errors = this.model.check();
+      errors.forEach(e -> LOG.error("bug: {}", e));
     }
 
     public void startEditingOperation(
@@ -370,21 +337,160 @@ public final class RoomDemo
     }
   }
 
-  private interface EditingOperationType extends MouseListener,
-    MouseMotionListener
+  private static final class PolygonDeletionEditingOp
+    extends MouseAdapter implements EditingOperationType
   {
-    void paint(Graphics2D g);
+    private final PublishSubject<String> messages;
+    private final PolygonCanvas canvas;
+    private final RoomEditingModelType editing;
+
+    PolygonDeletionEditingOp(
+      final PolygonCanvas in_canvas,
+      final PublishSubject<String> in_messages,
+      final RoomEditingModelType in_editing)
+    {
+      this.canvas = notNull(in_canvas, "Canvas");
+      this.messages = notNull(in_messages, "Messages");
+      this.editing = notNull(in_editing, "Editing");
+    }
+
+    @Override
+    public void paint(final Graphics2D g)
+    {
+
+    }
+
+    @Override
+    public void mouseReleased(
+      final MouseEvent e)
+    {
+      final int x = e.getX();
+      final int y = e.getY();
+      final int button = e.getButton();
+
+      try {
+        LOG.trace(
+          "onMouseReleased: {} {} {}",
+          Integer.valueOf(x),
+          Integer.valueOf(y),
+          Integer.valueOf(button));
+
+        if (button == 1) {
+          this.editing.polygonDelete(x, y);
+        }
+      } catch (final Exception ex) {
+        this.messages.onNext(ex.getMessage());
+        LOG.error("error: ", ex);
+      }
+    }
   }
 
-  private static final class PolygonCreatorListener extends MouseAdapter implements
-    EditingOperationType
+  private static final class VertexMovingOp
+    extends MouseAdapter implements EditingOperationType
+  {
+    private final PublishSubject<String> messages;
+    private final PolygonCanvas canvas;
+    private final RoomEditingVertexMoverType vertex_move;
+    private Vector2I mouse_snap;
+
+    VertexMovingOp(
+      final PolygonCanvas in_canvas,
+      final PublishSubject<String> in_messages,
+      final RoomEditingModelType in_editing)
+    {
+      this.canvas = notNull(in_canvas, "Canvas");
+      this.messages = notNull(in_messages, "Messages");
+      this.vertex_move = notNull(in_editing, "Editing").vertexMove();
+    }
+
+    @Override
+    public void mouseReleased(
+      final MouseEvent e)
+    {
+      this.mouse_snap = Vector2I.of(
+        snap(e.getX() + (GRID_SNAP / 2), GRID_SNAP),
+        snap(e.getY() + (GRID_SNAP / 2), GRID_SNAP));
+
+      if (e.getButton() == 1) {
+        if (this.vertex_move.isVertexSelected()) {
+          if (this.vertex_move.isVertexOK()) {
+            this.vertex_move.commit();
+            this.canvas.stopEditingOperation(this);
+            this.messages.onNext("");
+          } else {
+            this.messages.onNext("Cannot move vertex here.");
+          }
+        } else {
+          this.vertex_move.selectVertex(this.mouse_snap);
+          this.messages.onNext("Move the cursor to the new vertex position.");
+        }
+      }
+    }
+
+    @Override
+    public void mouseMoved(
+      final MouseEvent e)
+    {
+      this.mouse_snap = Vector2I.of(
+        snap(e.getX() + (GRID_SNAP / 2), GRID_SNAP),
+        snap(e.getY() + (GRID_SNAP / 2), GRID_SNAP));
+
+      if (this.vertex_move.isVertexSelected()) {
+        this.vertex_move.setVertexPosition(this.mouse_snap);
+      }
+    }
+
+    @Override
+    public void paint(
+      final Graphics2D g)
+    {
+      if (this.vertex_move.isVertexSelected()) {
+        for (final RoomEditingVertexMoverType.TemporaryPolygonType p :
+          this.vertex_move.temporaryPolygons()) {
+
+          {
+            final List<RoomEditingVertexMoverType.TemporaryVertexType> vs = p.vertices();
+            final int[] xs = new int[vs.size()];
+            final int[] ys = new int[vs.size()];
+            for (int index = 0; index < vs.size(); ++index) {
+              xs[index] = vs.get(index).position().x();
+              ys[index] = vs.get(index).position().y();
+            }
+
+            if (p.isConvex()) {
+              g.setPaint(new Color(0xe0, 0xe0, 0xe0, 0x90));
+            } else {
+              g.setPaint(new Color(0xff, 0x00, 0x00, 0x90));
+            }
+
+            g.fillPolygon(xs, ys, xs.length);
+
+            if (p.isConvex()) {
+              g.setPaint(new Color(0xa0, 0xa0, 0xa0, 0xff));
+            } else {
+              g.setPaint(new Color(0xff, 0x00, 0x00, 0xff));
+            }
+
+            g.drawPolygon(xs, ys, xs.length);
+
+            for (int index = 0; index < vs.size(); ++index) {
+              g.fillOval(xs[index] - 4, ys[index] - 4, 8, 8);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  private static final class PolygonCreatorEditingOp
+    extends MouseAdapter implements EditingOperationType
   {
     private final PublishSubject<String> messages;
     private final PolygonCanvas canvas;
     private final RoomEditingPolygonCreatorType poly_create;
     private Vector2I mouse_snap;
 
-    PolygonCreatorListener(
+    PolygonCreatorEditingOp(
       final PolygonCanvas in_canvas,
       final PublishSubject<String> in_messages,
       final RoomEditingModelType in_editing)
@@ -412,7 +518,7 @@ public final class RoomDemo
         if (button == 1) {
           if (this.poly_create.addVertex(this.mouse_snap)) {
             final RoomPolygonType pid = this.poly_create.create();
-            this.messages.onNext("Created " + pid.id());
+            this.messages.onNext("Created " + pid.id().value());
             this.canvas.stopEditingOperation(this);
           }
         }
@@ -428,7 +534,10 @@ public final class RoomDemo
     {
       final int x = e.getX();
       final int y = e.getY();
-      LOG.trace("onMouseMoved: {} {}", Integer.valueOf(x), Integer.valueOf(y));
+      LOG.trace(
+        "onMouseMoved: {} {}",
+        Integer.valueOf(x),
+        Integer.valueOf(y));
       this.mouse_snap = Vector2I.of(
         snap(x + (GRID_SNAP / 2), GRID_SNAP),
         snap(y + (GRID_SNAP / 2), GRID_SNAP));
@@ -475,6 +584,8 @@ public final class RoomDemo
   private static final class ToolBar extends JPanel
   {
     private final JButton create_polygon;
+    private final JButton delete_polygon;
+    private final JButton move_vertex;
 
     ToolBar(
       final PolygonCanvas canvas,
@@ -489,11 +600,46 @@ public final class RoomDemo
           messages.onNext(
             "Create points by clicking. Click the starting point to create a polygon.");
           canvas.startEditingOperation(
-            new PolygonCreatorListener(canvas, messages, canvas.model_editing));
+            new PolygonCreatorEditingOp(
+              canvas,
+              messages,
+              canvas.model_editing));
+        });
+
+      this.delete_polygon =
+        new JButton(new ImageIcon(
+          RoomDemo.class.getResource("polygon_delete.png")));
+      this.delete_polygon.setToolTipText("Delete polygons");
+      this.delete_polygon.addActionListener(
+        e -> {
+          messages.onNext(
+            "Click a polygon to delete it.");
+          canvas.startEditingOperation(
+            new PolygonDeletionEditingOp(
+              canvas,
+              messages,
+              canvas.model_editing));
+        });
+
+      this.move_vertex =
+        new JButton(new ImageIcon(
+          RoomDemo.class.getResource("vertex_move.png")));
+      this.move_vertex.setToolTipText("Move vertices");
+      this.move_vertex.addActionListener(
+        e -> {
+          messages.onNext(
+            "Click a vertex to start moving it.");
+          canvas.startEditingOperation(
+            new VertexMovingOp(
+              canvas,
+              messages,
+              canvas.model_editing));
         });
 
       this.setLayout(new FlowLayout(FlowLayout.LEFT));
       this.add(this.create_polygon);
+      this.add(this.delete_polygon);
+      this.add(this.move_vertex);
     }
   }
 
@@ -519,19 +665,31 @@ public final class RoomDemo
       file_exit.addActionListener(e -> this.dispose());
       file_exit.setMnemonic('x');
       final JMenu file = new JMenu("File");
+      file.setMnemonic('F');
       file.add(file_exit);
 
       final JMenuItem edit_undo = new JMenuItem("Undo");
       edit_undo.setEnabled(false);
       edit_undo.setMnemonic('U');
-      edit_undo.setAccelerator(KeyStroke.getKeyStroke(
-        (int) 'Z',
-        CTRL_DOWN_MASK));
+      edit_undo.setAccelerator(
+        KeyStroke.getKeyStroke((int) 'Z', CTRL_DOWN_MASK));
       edit_undo.addActionListener(e -> this.canvas.undo());
       this.canvas.model_executor.observable().subscribe(
-        u -> edit_undo.setEnabled(u.isUndoAvailable()));
+        state -> {
+          final Optional<RoomModelUndoAvailability> available_opt =
+            state.undoAvailable();
+          if (available_opt.isPresent()) {
+            final RoomModelUndoAvailability available = available_opt.get();
+            edit_undo.setText("Undo " + available.description());
+            edit_undo.setEnabled(available_opt.isPresent());
+          } else {
+            edit_undo.setText("Undo");
+            edit_undo.setEnabled(false);
+          }
+        });
 
       final JMenu edit = new JMenu("Edit");
+      edit.setMnemonic('E');
       edit.add(edit_undo);
 
       final JMenuBar menu = new JMenuBar();
@@ -550,19 +708,9 @@ public final class RoomDemo
         @Override
         public void windowOpened(final WindowEvent e)
         {
-          RoomDemo.PolygonWindow.this.canvas.requestFocusInWindow();
+          PolygonWindow.this.canvas.requestFocusInWindow();
         }
       });
     }
-  }
-
-  public static void main(final String[] args)
-  {
-    SwingUtilities.invokeLater(() -> {
-      final PolygonWindow window = new PolygonWindow();
-      window.pack();
-      window.setVisible(true);
-      window.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
-    });
   }
 }
