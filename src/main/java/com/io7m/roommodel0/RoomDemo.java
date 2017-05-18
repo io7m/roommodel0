@@ -347,7 +347,7 @@ public final class RoomDemo
     private void paintLiquid(
       final Graphics2D gg)
     {
-      gg.setPaint(Color.GREEN);
+      gg.setPaint(new Color(0x00, 0xff, 0x0, 0x60));
       for (int p_index = 0; p_index < this.liquid_cells.polygons.size(); ++p_index) {
         final List<Vector2I> p = this.liquid_cells.polygons.get(p_index);
 
