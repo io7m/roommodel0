@@ -16,6 +16,7 @@
 
 package com.io7m.roommodel0;
 
+import com.io7m.jfunctional.Pair;
 import com.io7m.jregions.core.unparameterized.areas.AreaL;
 import com.io7m.jspatial.api.TreeVisitResult;
 import com.io7m.jspatial.api.quadtrees.QuadTreeReadableLType;
@@ -116,6 +117,7 @@ public final class RoomDemo
     private final RoomModelOpExecutorType model_executor;
     private final RoomEditingModelType model_editing;
     private final RoomModelType model;
+    private RoomModelLiquidCells liquid_cells;
     private Vector2I mouse;
     private Vector2I mouse_snap;
     private EditingOperationType edit_op;
@@ -128,11 +130,13 @@ public final class RoomDemo
 
       this.model =
         RoomModel.create(
-          AreaL.of(-2048L, 2048L, -2048L, 2048L));
+          AreaL.of(16L, 16L * 32L, 16L, 10L * 32L));
       this.model_executor =
         new RoomModelOpExecutor(this.model, 32);
       this.model_editing =
         RoomEditingModel.create(this.model_executor);
+      this.liquid_cells =
+        RoomModelLiquidCells.generate(this.model);
 
       this.addMouseMotionListener(new MouseAdapter()
       {
@@ -143,7 +147,10 @@ public final class RoomDemo
         }
       });
 
-      this.model_executor.observable().subscribe(e -> this.repaint());
+      this.model_executor.observable().subscribe(
+        e -> this.repaint());
+      this.model_executor.observable().subscribe(
+        e -> this.liquid_cells = RoomModelLiquidCells.generate(this.model));
     }
 
     private static void paintQuadTree(
@@ -163,6 +170,27 @@ public final class RoomDemo
             (int) area.sizeY());
           return TreeVisitResult.RESULT_CONTINUE;
         });
+      } finally {
+        g.setStroke(s);
+      }
+    }
+
+    private void paintGrid(
+      final Graphics2D g)
+    {
+      final Stroke s = g.getStroke();
+      try {
+        g.setColor(new Color(0xee, 0xee, 0xee));
+        g.setStroke(dashedStroke());
+
+        final int w = this.getWidth();
+        final int h = this.getHeight();
+        for (int x = 0; x < w; x += GRID_SNAP) {
+          g.drawLine(x, 0, x, h);
+        }
+        for (int y = 0; y < h; y += GRID_SNAP) {
+          g.drawLine(0, y, w, y);
+        }
       } finally {
         g.setStroke(s);
       }
@@ -282,7 +310,9 @@ public final class RoomDemo
       gg.setPaint(Color.WHITE);
       gg.fillRect(0, 0, this.getWidth(), this.getHeight());
 
+      this.paintGrid(gg);
       this.paintModel(gg);
+      this.paintLiquid(gg);
 
       {
         final EditingOperationType op = this.edit_op;
@@ -294,8 +324,63 @@ public final class RoomDemo
       gg.setPaint(Color.GREEN);
       gg.fillOval(this.mouse.x() - 4, this.mouse.y() - 4, 8, 8);
 
+      gg.drawString(
+        String.format(
+          "%dx%d",
+          Integer.valueOf(this.mouse.x()),
+          Integer.valueOf(this.mouse.y())),
+        this.mouse_snap.x() + 8,
+        this.mouse_snap.y() + 8);
+
       gg.setPaint(Color.RED);
       gg.fillOval(this.mouse_snap.x() - 4, this.mouse_snap.y() - 4, 8, 8);
+
+      gg.drawString(
+        String.format(
+          "%dx%d",
+          Integer.valueOf(this.mouse_snap.x()),
+          Integer.valueOf(this.mouse_snap.y())),
+        this.mouse_snap.x() + 8,
+        this.mouse_snap.y() - 8);
+    }
+
+    private void paintLiquid(
+      final Graphics2D gg)
+    {
+      gg.setPaint(Color.GREEN);
+      for (int p_index = 0; p_index < this.liquid_cells.polygons.size(); ++p_index) {
+        final List<Vector2I> p = this.liquid_cells.polygons.get(p_index);
+
+        for (int index = 0; index < p.size(); ++index) {
+          final Vector2I v0 = p.get(index);
+          final Vector2I v1;
+          if (index + 1 < p.size()) {
+            v1 = p.get(index + 1);
+          } else {
+            v1 = p.get(0);
+          }
+          gg.drawLine(v0.x(), v0.y(), v1.x(), v1.y());
+        }
+
+        {
+          final Vector2D c = RoomPolygons.barycenter(p);
+          gg.drawString(Integer.toString(p_index), (int) c.x(), (int) c.y());
+        }
+      }
+
+      gg.setPaint(Color.RED);
+      for (final Pair<Vector2I, Vector2I> p : this.liquid_cells.intersections) {
+        final Vector2I p0 = p.getLeft();
+        final Vector2I p1 = p.getRight();
+
+        final int p0x = p0.x();
+        final int p0y = p0.y();
+        final int p1x = p1.x();
+        final int p1y = p1.y();
+        gg.drawLine(p0x, p0y, p1x, p1y);
+        gg.fillOval(p0x - 2, p0y - 2, 4, 4);
+        gg.fillOval(p1x - 2, p1y - 2, 4, 4);
+      }
     }
 
     private void paintModel(final Graphics2D g)

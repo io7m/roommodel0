@@ -10,6 +10,8 @@
     <target>System.err</target>
   </appender>
 
+  <logger name="com.io7m.roommodel0.RoomModelLiquidCells" level="TRACE"/>
+
   <root level="DEBUG">
     <appender-ref ref="STDERR"/>
   </root>

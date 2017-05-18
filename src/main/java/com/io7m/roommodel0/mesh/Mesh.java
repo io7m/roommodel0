@@ -1,4 +1,4 @@
-package com.io7m.roommodel0;
+package com.io7m.roommodel0.mesh;
 
 import com.io7m.jaffirm.core.Invariants;
 import com.io7m.jaffirm.core.Postconditions;
@@ -27,27 +27,24 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-public final class RoomModel implements RoomModelType
+public final class Mesh implements MeshType
 {
   private final SimpleGraph<Vertex, Edge> vertex_connectivity;
   private final Long2ReferenceRBTreeMap<Vertex> vertices;
-  private final Collection<RoomPolyVertexType> vertices_view;
   private final Long2ReferenceRBTreeMap<Polygon> polygons;
-  private final Collection<RoomPolygonType> polygons_view;
+  private final Collection<PolygonType> polygons_view;
   private final QuadTreeLType<Polygon> polygons_tree;
   private final AreaL bounds;
   private long vertex_ids;
   private long polygon_ids;
 
-  private RoomModel(
+  private Mesh(
     final AreaL in_bounds)
   {
     this.bounds = NullCheck.notNull(in_bounds, "Bounds");
 
     this.vertices =
       new Long2ReferenceRBTreeMap<>();
-    this.vertices_view =
-      Collections.unmodifiableCollection(this.vertices.values());
     this.vertex_connectivity =
       new SimpleGraph<>(Edge::new);
 
@@ -78,10 +75,10 @@ public final class RoomModel implements RoomModelType
     return (Collection<B>) q;
   }
 
-  public static RoomModelType create(
+  public static MeshType create(
     final AreaL bounds)
   {
-    return new RoomModel(bounds);
+    return new Mesh(bounds);
   }
 
   private static List<Pair<Vertex, Vertex>> pairVertices(
@@ -112,13 +109,13 @@ public final class RoomModel implements RoomModelType
       positions.add(vs.get(index).position());
     }
 
-    if (!RoomPolygons.isConvex(positions)) {
-      throw new RoomModelExceptionPolygonNotConvex("Polygon is not convex");
+    if (!MeshPolygons.isConvex(positions)) {
+      throw new MeshExceptionPolygonNotConvex("Polygon is not convex");
     }
   }
 
   @Override
-  public RoomPolyVertexType vertexCreate(
+  public PolygonVertexType vertexCreate(
     final Vector2I position)
   {
     NullCheck.notNull(position, "Position");
@@ -126,15 +123,15 @@ public final class RoomModel implements RoomModelType
   }
 
   @Override
-  public RoomPolyVertexType vertexCreateWithID(
-    final RoomPolyVertexID vertex,
+  public PolygonVertexType vertexCreateWithID(
+    final PolygonVertexID vertex,
     final Vector2I position)
   {
     NullCheck.notNull(vertex, "Vertex");
     NullCheck.notNull(position, "Position");
 
     if (this.vertices.containsKey(vertex.value())) {
-      throw new RoomModelExceptionVertexDuplicate(
+      throw new MeshExceptionVertexDuplicate(
         "Vertex already exists with the given ID");
     }
 
@@ -146,7 +143,7 @@ public final class RoomModel implements RoomModelType
 
   @Override
   public void vertexSetPosition(
-    final RoomPolyVertexID vertex_id,
+    final PolygonVertexID vertex_id,
     final Vector2I position)
   {
     NullCheck.notNull(vertex_id, "Vertex");
@@ -166,7 +163,7 @@ public final class RoomModel implements RoomModelType
           return vv.position;
         }).collect(Collectors.toList());
 
-      if (!RoomPolygons.isConvex(pv)) {
+      if (!MeshPolygons.isConvex(pv)) {
         final StringBuilder sb = new StringBuilder(128);
         sb.append("Setting vertex position would make polygon non-convex.");
         sb.append(System.lineSeparator());
@@ -179,10 +176,10 @@ public final class RoomModel implements RoomModelType
         sb.append("  Polygon: ");
         sb.append(p);
         sb.append(System.lineSeparator());
-        throw new RoomModelExceptionPolygonNotConvex(sb.toString());
+        throw new MeshExceptionPolygonNotConvex(sb.toString());
       }
 
-      final AreaL new_bounds = RoomPolygons.bounds(pv);
+      final AreaL new_bounds = MeshPolygons.bounds(pv);
       if (!AreasL.contains(this.bounds, new_bounds)) {
         final StringBuilder sb = new StringBuilder(128);
         sb.append("Setting vertex position would make polygon exceed bounds.");
@@ -196,7 +193,7 @@ public final class RoomModel implements RoomModelType
         sb.append("  Polygon: ");
         sb.append(p);
         sb.append(System.lineSeparator());
-        throw new RoomModelExceptionPolygonNotConvex(sb.toString());
+        throw new MeshExceptionPolygonNotConvex(sb.toString());
       }
 
       bounds_by_polygon.put(p.id.value(), new_bounds);
@@ -213,27 +210,27 @@ public final class RoomModel implements RoomModelType
   }
 
   @Override
-  public RoomPolygonType polygonCreate(
-    final List<RoomPolyVertexID> poly_vertices)
+  public PolygonType polygonCreate(
+    final List<PolygonVertexID> poly_vertices)
   {
     return this.polygonCreateWithID(this.polygonIDFresh(), poly_vertices);
   }
 
   @Override
-  public RoomPolygonType polygonCreateWithID(
-    final RoomPolygonID id,
-    final List<RoomPolyVertexID> vids)
+  public PolygonType polygonCreateWithID(
+    final PolygonID id,
+    final List<PolygonVertexID> vids)
   {
     NullCheck.notNull(id, "ID");
     NullCheck.notNull(vids, "Vertices");
 
     if (this.polygons.containsKey(id.value())) {
-      throw new RoomModelExceptionPolygonDuplicate(
+      throw new MeshExceptionPolygonDuplicate(
         "Polygon already exists with the given ID");
     }
 
     if (vids.size() < 3) {
-      throw new RoomModelExceptionPolygonTooFewVertices(
+      throw new MeshExceptionPolygonTooFewVertices(
         "Polygon must have at least three vertices");
     }
 
@@ -241,17 +238,8 @@ public final class RoomModel implements RoomModelType
       this.checkVerticesExist(vids);
     checkVerticesAreConvex(poly_vertices);
 
-    final AreaL poly_bounds =
-      RoomPolygons.bounds(poly_vertices.stream()
-                            .map(RoomPolyVertexType::position)
-                            .collect(Collectors.toList()));
-
-    if (!AreasL.contains(this.bounds, poly_bounds)) {
-      throw new RoomModelExceptionPolygonOutsideBounds(
-        "Polygon cannot fit into the room");
-    }
-
-    final List<Pair<Vertex, Vertex>> edge_pairs = pairVertices(poly_vertices);
+    final List<Pair<Vertex, Vertex>> edge_pairs = pairVertices(
+      poly_vertices);
     final ReferenceArrayList<Edge> edges =
       new ReferenceArrayList<>(poly_vertices.size());
     final ReferenceOpenHashSet<Polygon> connected_polygons = new ReferenceOpenHashSet<>();
@@ -267,6 +255,16 @@ public final class RoomModel implements RoomModelType
         edge = new Edge(v0, v1);
       }
       edges.add(edge);
+    }
+
+    final AreaL poly_bounds =
+      MeshPolygons.bounds(poly_vertices.stream()
+                            .map(PolygonVertexType::position)
+                            .collect(Collectors.toList()));
+
+    if (!AreasL.contains(this.bounds, poly_bounds)) {
+      throw new MeshExceptionPolygonOutsideBounds(
+        "Polygon cannot fit into the room");
     }
 
     final Polygon poly = new Polygon(id, poly_bounds);
@@ -292,7 +290,7 @@ public final class RoomModel implements RoomModelType
 
   @Override
   public void polygonDelete(
-    final RoomPolygonID pid)
+    final PolygonID pid)
   {
     NullCheck.notNull(pid, "Polygon ID");
 
@@ -326,9 +324,9 @@ public final class RoomModel implements RoomModelType
     poly.deleted = true;
   }
 
-  private RoomPolygonID polygonIDFresh()
+  private PolygonID polygonIDFresh()
   {
-    final RoomPolygonID id = RoomPolygonID.of(this.polygon_ids);
+    final PolygonID id = PolygonID.of(this.polygon_ids);
 
     final long last_key;
     if (!this.polygons.isEmpty()) {
@@ -348,9 +346,9 @@ public final class RoomModel implements RoomModelType
     return id;
   }
 
-  private RoomPolyVertexID vertexIDFresh()
+  private PolygonVertexID vertexIDFresh()
   {
-    final RoomPolyVertexID id = RoomPolyVertexID.of(this.vertex_ids);
+    final PolygonVertexID id = PolygonVertexID.of(this.vertex_ids);
 
     final long last_key;
     if (!this.vertices.isEmpty()) {
@@ -371,18 +369,18 @@ public final class RoomModel implements RoomModelType
   }
 
   private Polygon checkPolygonExists(
-    final RoomPolygonID pid)
+    final PolygonID pid)
   {
     if (this.polygons.containsKey(pid.value())) {
       return this.polygons.get(pid.value());
     }
 
-    throw new RoomModelExceptionPolygonNonexistent(
+    throw new MeshExceptionPolygonNonexistent(
       String.format("Polygon %s does not exist", Long.valueOf(pid.value())));
   }
 
   private ReferenceArrayList<Vertex> checkVerticesExist(
-    final List<RoomPolyVertexID> vids)
+    final List<PolygonVertexID> vids)
   {
     final ReferenceArrayList<Vertex> vertices =
       new ReferenceArrayList<>(vids.size());
@@ -393,30 +391,30 @@ public final class RoomModel implements RoomModelType
   }
 
   private Vertex checkVertexExists(
-    final RoomPolyVertexID v)
+    final PolygonVertexID v)
   {
     if (this.vertices.containsKey(v.value())) {
       return this.vertices.get(v.value());
     }
 
-    throw new RoomModelExceptionVertexNonexistent(
+    throw new MeshExceptionVertexNonexistent(
       String.format("Vertex %s does not exist", v));
   }
 
   @Override
-  public Collection<RoomPolygonType> polygons()
+  public Collection<PolygonType> polygons()
   {
     return this.polygons_view;
   }
 
   @Override
-  public QuadTreeReadableLType<RoomPolygonType> polygonTree()
+  public QuadTreeReadableLType<PolygonType> polygonTree()
   {
     return castQuadTree(this.polygons_tree);
   }
 
   @Override
-  public Optional<RoomPolyVertexType> vertexFind(
+  public Optional<PolygonVertexType> vertexFind(
     final Vector2I position)
   {
     final ReferenceOpenHashSet<Polygon> results =
@@ -440,7 +438,7 @@ public final class RoomModel implements RoomModelType
   }
 
   @Override
-  public Optional<RoomPolygonType> polygonFind(
+  public Optional<PolygonType> polygonFind(
     final Vector2I position)
   {
     NullCheck.notNull(position, "position");
@@ -460,18 +458,12 @@ public final class RoomModel implements RoomModelType
           .map(Vertex::position)
           .collect(Collectors.toList());
 
-      if (RoomPolygons.containsPoint(points, position)) {
+      if (MeshPolygons.containsPoint(points, position)) {
         return Optional.of(poly);
       }
     }
 
     return Optional.empty();
-  }
-
-  @Override
-  public Collection<RoomPolyVertexType> vertices()
-  {
-    return this.vertices_view;
   }
 
   @Override
@@ -600,18 +592,18 @@ public final class RoomModel implements RoomModelType
     return errors;
   }
 
-  private static final class Polygon implements RoomPolygonType
+  private static final class Polygon implements PolygonType
   {
     private final ReferenceArrayList<Edge> edges;
-    private final List<RoomPolyEdgeType> edges_view;
+    private final List<PolygonEdgeType> edges_view;
     private final ReferenceArrayList<Vertex> vertices;
-    private final List<RoomPolyVertexType> vertices_view;
-    private final RoomPolygonID id;
+    private final List<PolygonVertexType> vertices_view;
+    private final PolygonID id;
     private AreaL bounds;
     private boolean deleted;
 
     Polygon(
-      final RoomPolygonID in_id,
+      final PolygonID in_id,
       final AreaL in_bounds)
     {
       this.id = in_id;
@@ -632,7 +624,7 @@ public final class RoomModel implements RoomModelType
     }
 
     @Override
-    public RoomPolygonID id()
+    public PolygonID id()
     {
       return this.id;
     }
@@ -644,13 +636,13 @@ public final class RoomModel implements RoomModelType
     }
 
     @Override
-    public List<RoomPolyEdgeType> edges()
+    public List<PolygonEdgeType> edges()
     {
       return this.edges_view;
     }
 
     @Override
-    public List<RoomPolyVertexType> vertices()
+    public List<PolygonVertexType> vertices()
     {
       return this.vertices_view;
     }
@@ -662,12 +654,12 @@ public final class RoomModel implements RoomModelType
     }
   }
 
-  private static final class Edge implements RoomPolyEdgeType
+  private static final class Edge implements PolygonEdgeType
   {
     private final Vertex vertex0;
     private final Vertex vertex1;
     private final ReferenceOpenHashSet<Polygon> polygons;
-    private final Set<RoomPolygonType> polygons_view;
+    private final Set<PolygonType> polygons_view;
 
     Edge(
       final Vertex in_vertex0,
@@ -715,19 +707,19 @@ public final class RoomModel implements RoomModelType
     }
 
     @Override
-    public Set<RoomPolygonType> polygons()
+    public Set<PolygonType> polygons()
     {
       return this.polygons_view;
     }
 
     @Override
-    public RoomPolyVertexType vertex0()
+    public PolygonVertexType vertex0()
     {
       return this.vertex0;
     }
 
     @Override
-    public RoomPolyVertexType vertex1()
+    public PolygonVertexType vertex1()
     {
       return this.vertex1;
     }
@@ -741,22 +733,22 @@ public final class RoomModel implements RoomModelType
     @Override
     public Vector2D normal()
     {
-      return RoomPolygons.normal(
+      return MeshPolygons.normal(
         this.vertex0.position,
         this.vertex1.position);
     }
   }
 
-  private static final class Vertex implements RoomPolyVertexType
+  private static final class Vertex implements PolygonVertexType
   {
     private final ReferenceOpenHashSet<Polygon> polygons;
-    private final Set<RoomPolygonType> polygons_view;
-    private final RoomPolyVertexID id;
+    private final Set<PolygonType> polygons_view;
+    private final PolygonVertexID id;
     private Vector2I position;
     private boolean deleted;
 
     private Vertex(
-      final RoomPolyVertexID in_id,
+      final PolygonVertexID in_id,
       final Vector2I in_position)
     {
       this.id = NullCheck.notNull(in_id, "ID");
@@ -775,13 +767,13 @@ public final class RoomModel implements RoomModelType
     }
 
     @Override
-    public RoomPolyVertexID id()
+    public PolygonVertexID id()
     {
       return this.id;
     }
 
     @Override
-    public Set<RoomPolygonType> polygons()
+    public Set<PolygonType> polygons()
     {
       return this.polygons_view;
     }

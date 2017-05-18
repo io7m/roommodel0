@@ -15,4 +15,6 @@ public interface RoomModelReadableType
   Optional<RoomPolyVertexType> vertexFind(Vector2I position);
 
   Optional<RoomPolygonType> polygonFind(Vector2I position);
+
+  Collection<RoomPolyVertexType> vertices();
 }
