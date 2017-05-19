@@ -52,7 +52,7 @@ public final class RoomModelLiquidCells
     final MeshType cell_mesh = Mesh.create(mesh.polygonTree().bounds());
     final QuadTreeReadableIType<PolygonType> tree = mesh.polygonTree();
     final AreaI bounds = tree.bounds();
-    final IntRBTreeSet y_values = collectVertices(mesh);
+    final IntRBTreeSet y_values = collectVertexYValues(mesh);
     int y_previous = bounds.minimumY();
     for (final int y_current : y_values) {
       final AreaI span_bounds =
@@ -168,7 +168,7 @@ public final class RoomModelLiquidCells
     return this.mesh;
   }
 
-  private static IntRBTreeSet collectVertices(
+  private static IntRBTreeSet collectVertexYValues(
     final MeshReadableType mesh)
   {
     final IntRBTreeSet ys = new IntRBTreeSet();
