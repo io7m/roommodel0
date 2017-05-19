@@ -1,8 +1,6 @@
 package com.io7m.roommodel0.mesh;
 
 import com.io7m.jtensors.core.unparameterized.vectors.Vector2I;
-import com.io7m.roommodel0.RoomPolyVertexType;
-import com.io7m.roommodel0.RoomPolygonType;
 import com.io7m.roommodel0.undo.UndoControllerType;
 import it.unimi.dsi.fastutil.objects.ReferenceArrayList;
 import it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet;

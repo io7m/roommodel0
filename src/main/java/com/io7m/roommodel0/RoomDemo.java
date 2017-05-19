@@ -24,6 +24,17 @@ import com.io7m.jtensors.core.unparameterized.vectors.Vector2D;
 import com.io7m.jtensors.core.unparameterized.vectors.Vector2I;
 import com.io7m.jtensors.core.unparameterized.vectors.Vectors2D;
 import com.io7m.jtensors.core.unparameterized.vectors.Vectors2I;
+import com.io7m.roommodel0.mesh.Mesh;
+import com.io7m.roommodel0.mesh.MeshEditing;
+import com.io7m.roommodel0.mesh.MeshEditingPolygonCreatorType;
+import com.io7m.roommodel0.mesh.MeshEditingType;
+import com.io7m.roommodel0.mesh.MeshEditingVertexMoverType;
+import com.io7m.roommodel0.mesh.MeshReadableType;
+import com.io7m.roommodel0.mesh.MeshType;
+import com.io7m.roommodel0.mesh.PolygonEdgeType;
+import com.io7m.roommodel0.mesh.PolygonType;
+import com.io7m.roommodel0.mesh.PolygonVertexType;
+import com.io7m.roommodel0.undo.UndoController;
 import io.reactivex.Observable;
 import io.reactivex.subjects.PublishSubject;
 import org.slf4j.Logger;
@@ -114,9 +125,9 @@ public final class RoomDemo
 
   private static final class PolygonCanvas extends JPanel
   {
-    private final RoomModelOpExecutorType model_executor;
-    private final RoomEditingModelType model_editing;
-    private final RoomModelType model;
+    private final UndoController<MeshType> undo_controller;
+    private final MeshEditingType mesh_editing;
+    private final MeshType mesh;
     private RoomModelLiquidCells liquid_cells;
     private Vector2I mouse;
     private Vector2I mouse_snap;
@@ -128,15 +139,15 @@ public final class RoomDemo
       this.mouse = Vectors2I.zero();
       this.mouse_snap = Vectors2I.zero();
 
-      this.model =
-        RoomModel.create(
+      this.mesh =
+        Mesh.create(
           AreaL.of(16L, 16L * 32L, 16L, 10L * 32L));
-      this.model_executor =
-        new RoomModelOpExecutor(this.model, 32);
-      this.model_editing =
-        RoomEditingModel.create(this.model_executor);
+      this.undo_controller =
+        new UndoController<>(this.mesh, 32);
+      this.mesh_editing =
+        MeshEditing.create(this.undo_controller);
       this.liquid_cells =
-        RoomModelLiquidCells.generate(this.model);
+        RoomModelLiquidCells.generate(this.mesh);
 
       this.addMouseMotionListener(new MouseAdapter()
       {
@@ -147,15 +158,15 @@ public final class RoomDemo
         }
       });
 
-      this.model_executor.observable().subscribe(
+      this.undo_controller.observable().subscribe(
         e -> this.repaint());
-      this.model_executor.observable().subscribe(
-        e -> this.liquid_cells = RoomModelLiquidCells.generate(this.model));
+      this.undo_controller.observable().subscribe(
+        e -> this.liquid_cells = RoomModelLiquidCells.generate(this.mesh));
     }
 
     private static void paintQuadTree(
       final Graphics2D g,
-      final QuadTreeReadableLType<RoomPolygonType> q)
+      final QuadTreeReadableLType<PolygonType> q)
     {
       final Stroke s = g.getStroke();
       try {
@@ -175,30 +186,9 @@ public final class RoomDemo
       }
     }
 
-    private void paintGrid(
-      final Graphics2D g)
-    {
-      final Stroke s = g.getStroke();
-      try {
-        g.setColor(new Color(0xee, 0xee, 0xee));
-        g.setStroke(dashedStroke());
-
-        final int w = this.getWidth();
-        final int h = this.getHeight();
-        for (int x = 0; x < w; x += GRID_SNAP) {
-          g.drawLine(x, 0, x, h);
-        }
-        for (int y = 0; y < h; y += GRID_SNAP) {
-          g.drawLine(0, y, w, y);
-        }
-      } finally {
-        g.setStroke(s);
-      }
-    }
-
     private static void paintPolygon(
       final Graphics2D g,
-      final RoomPolygonType p)
+      final PolygonType p)
     {
       final Stroke s = g.getStroke();
       try {
@@ -213,8 +203,8 @@ public final class RoomDemo
         g.setStroke(s);
       }
 
-      final List<RoomPolyVertexType> vs = p.vertices();
-      final List<RoomPolyEdgeType> es = p.edges();
+      final List<PolygonVertexType> vs = p.vertices();
+      final List<PolygonEdgeType> es = p.edges();
 
       g.setColor(new Color(0xf0, 0xf0, 0xf0));
 
@@ -229,7 +219,7 @@ public final class RoomDemo
       }
 
       for (int index = 0; index < es.size(); ++index) {
-        final RoomPolyEdgeType e = es.get(index);
+        final PolygonEdgeType e = es.get(index);
 
         if (e.isExternal()) {
           g.setColor(Color.BLUE);
@@ -265,7 +255,7 @@ public final class RoomDemo
 
       g.setColor(Color.BLUE);
       for (int index = 0; index < vs.size(); ++index) {
-        final RoomPolyVertexType v = vs.get(index);
+        final PolygonVertexType v = vs.get(index);
         final Vector2I pos = v.position();
         g.fillOval(pos.x() - 4, pos.y() - 4, 8, 8);
         g.drawString(
@@ -278,13 +268,34 @@ public final class RoomDemo
         RoomPolygons.barycenter(
           p.vertices()
             .stream()
-            .map(RoomPolyVertexType::position)
+            .map(PolygonVertexType::position)
             .collect(Collectors.toList()));
 
       g.drawString(
         "P" + Long.toString(p.id().value()),
         (int) center.x(),
         (int) center.y());
+    }
+
+    private void paintGrid(
+      final Graphics2D g)
+    {
+      final Stroke s = g.getStroke();
+      try {
+        g.setColor(new Color(0xee, 0xee, 0xee));
+        g.setStroke(dashedStroke());
+
+        final int w = this.getWidth();
+        final int h = this.getHeight();
+        for (int x = 0; x < w; x += GRID_SNAP) {
+          g.drawLine(x, 0, x, h);
+        }
+        for (int y = 0; y < h; y += GRID_SNAP) {
+          g.drawLine(0, y, w, y);
+        }
+      } finally {
+        g.setStroke(s);
+      }
     }
 
     private void onMouseMoved(
@@ -385,19 +396,19 @@ public final class RoomDemo
 
     private void paintModel(final Graphics2D g)
     {
-      final RoomModelReadableType m = this.model_executor.model();
+      final MeshReadableType m = this.undo_controller.state();
 
       paintQuadTree(g, m.polygonTree());
 
-      for (final RoomPolygonType p : m.polygons()) {
+      for (final PolygonType p : m.polygons()) {
         paintPolygon(g, p);
       }
     }
 
     public void undo()
     {
-      this.model_executor.undo();
-      final List<String> errors = this.model.check();
+      this.undo_controller.undo();
+      final List<String> errors = this.mesh.check();
       errors.forEach(e -> LOG.error("bug: {}", e));
     }
 
@@ -427,12 +438,12 @@ public final class RoomDemo
   {
     private final PublishSubject<String> messages;
     private final PolygonCanvas canvas;
-    private final RoomEditingModelType editing;
+    private final MeshEditingType editing;
 
     PolygonDeletionEditingOp(
       final PolygonCanvas in_canvas,
       final PublishSubject<String> in_messages,
-      final RoomEditingModelType in_editing)
+      final MeshEditingType in_editing)
     {
       this.canvas = notNull(in_canvas, "Canvas");
       this.messages = notNull(in_messages, "Messages");
@@ -475,13 +486,13 @@ public final class RoomDemo
   {
     private final PublishSubject<String> messages;
     private final PolygonCanvas canvas;
-    private final RoomEditingVertexMoverType vertex_move;
+    private final MeshEditingVertexMoverType vertex_move;
     private Vector2I mouse_snap;
 
     VertexMovingOp(
       final PolygonCanvas in_canvas,
       final PublishSubject<String> in_messages,
-      final RoomEditingModelType in_editing)
+      final MeshEditingType in_editing)
     {
       this.canvas = notNull(in_canvas, "Canvas");
       this.messages = notNull(in_messages, "Messages");
@@ -530,11 +541,11 @@ public final class RoomDemo
       final Graphics2D g)
     {
       if (this.vertex_move.isVertexSelected()) {
-        for (final RoomEditingVertexMoverType.TemporaryPolygonType p :
+        for (final MeshEditingVertexMoverType.TemporaryPolygonType p :
           this.vertex_move.temporaryPolygons()) {
 
           {
-            final List<RoomEditingVertexMoverType.TemporaryVertexType> vs = p.vertices();
+            final List<MeshEditingVertexMoverType.TemporaryVertexType> vs = p.vertices();
             final int[] xs = new int[vs.size()];
             final int[] ys = new int[vs.size()];
             for (int index = 0; index < vs.size(); ++index) {
@@ -572,13 +583,13 @@ public final class RoomDemo
   {
     private final PublishSubject<String> messages;
     private final PolygonCanvas canvas;
-    private final RoomEditingPolygonCreatorType poly_create;
+    private final MeshEditingPolygonCreatorType poly_create;
     private Vector2I mouse_snap;
 
     PolygonCreatorEditingOp(
       final PolygonCanvas in_canvas,
       final PublishSubject<String> in_messages,
-      final RoomEditingModelType in_editing)
+      final MeshEditingType in_editing)
     {
       this.canvas = notNull(in_canvas, "Canvas");
       this.messages = notNull(in_messages, "Messages");
@@ -602,7 +613,7 @@ public final class RoomDemo
 
         if (button == 1) {
           if (this.poly_create.addVertex(this.mouse_snap)) {
-            final RoomPolygonType pid = this.poly_create.create();
+            final PolygonType pid = this.poly_create.create();
             this.messages.onNext("Created " + pid.id().value());
             this.canvas.stopEditingOperation(this);
           }
@@ -688,7 +699,7 @@ public final class RoomDemo
             new PolygonCreatorEditingOp(
               canvas,
               messages,
-              canvas.model_editing));
+              canvas.mesh_editing));
         });
 
       this.delete_polygon =
@@ -703,7 +714,7 @@ public final class RoomDemo
             new PolygonDeletionEditingOp(
               canvas,
               messages,
-              canvas.model_editing));
+              canvas.mesh_editing));
         });
 
       this.move_vertex =
@@ -718,7 +729,7 @@ public final class RoomDemo
             new VertexMovingOp(
               canvas,
               messages,
-              canvas.model_editing));
+              canvas.mesh_editing));
         });
 
       this.setLayout(new FlowLayout(FlowLayout.LEFT));
@@ -759,14 +770,13 @@ public final class RoomDemo
       edit_undo.setAccelerator(
         KeyStroke.getKeyStroke((int) 'Z', CTRL_DOWN_MASK));
       edit_undo.addActionListener(e -> this.canvas.undo());
-      this.canvas.model_executor.observable().subscribe(
+      this.canvas.undo_controller.observable().subscribe(
         state -> {
-          final Optional<RoomModelUndoAvailability> available_opt =
-            state.undoAvailable();
-          if (available_opt.isPresent()) {
-            final RoomModelUndoAvailability available = available_opt.get();
-            edit_undo.setText("Undo " + available.description());
-            edit_undo.setEnabled(available_opt.isPresent());
+          final Optional<String> operation_opt = state.undoOperation();
+          if (operation_opt.isPresent()) {
+            final String operation = operation_opt.get();
+            edit_undo.setText("Undo " + operation);
+            edit_undo.setEnabled(true);
           } else {
             edit_undo.setText("Undo");
             edit_undo.setEnabled(false);

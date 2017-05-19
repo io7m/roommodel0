@@ -154,4 +154,18 @@ public final class RoomPolygons
     }
     return result;
   }
+
+  static boolean isClockwiseOrder(
+    final List<Vector2I> vertices)
+  {
+    long sum = 0L;
+    for (int index = 0; index < vertices.size(); index++) {
+      final Vector2I v1 = vertices.get(index);
+      final Vector2I v2 = vertices.get((index + 1) % vertices.size());
+      final int xd = Math.subtractExact(v2.x(), v1.x());
+      final int yd = Math.addExact(v2.y(), v1.y());
+      sum = Math.addExact(sum, (long) Math.multiplyExact(xd, yd));
+    }
+    return sum < 0L;
+  }
 }

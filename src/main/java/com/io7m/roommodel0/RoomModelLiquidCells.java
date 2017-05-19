@@ -7,6 +7,10 @@ import com.io7m.jregions.core.unparameterized.areas.AreasL;
 import com.io7m.jspatial.api.quadtrees.QuadTreeReadableLType;
 import com.io7m.jtensors.core.unparameterized.vectors.Vector2D;
 import com.io7m.jtensors.core.unparameterized.vectors.Vector2I;
+import com.io7m.roommodel0.mesh.MeshReadableType;
+import com.io7m.roommodel0.mesh.PolygonEdgeType;
+import com.io7m.roommodel0.mesh.PolygonType;
+import com.io7m.roommodel0.mesh.PolygonVertexType;
 import it.unimi.dsi.fastutil.ints.IntRBTreeSet;
 import it.unimi.dsi.fastutil.objects.ReferenceArrayList;
 import it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet;
@@ -38,22 +42,19 @@ public final class RoomModelLiquidCells
   }
 
   public static RoomModelLiquidCells generate(
-    final RoomModelType model)
+    final MeshReadableType mesh)
   {
-    notNull(model, "Model");
+    notNull(mesh, "Mesh");
 
     final ReferenceArrayList<List<Vector2I>> polygons =
       new ReferenceArrayList<>();
     final ReferenceArrayList<Pair<Vector2I, Vector2I>> intersections =
       new ReferenceArrayList<>();
 
-    final QuadTreeReadableLType<RoomPolygonType> tree = model.polygonTree();
+    final QuadTreeReadableLType<PolygonType> tree = mesh.polygonTree();
     final AreaL bounds = tree.bounds();
 
-    final IntRBTreeSet y_values = collectVertices(model);
-
-    final ReferenceOpenHashSet<RoomPolygonType> overlapped_polygons =
-      new ReferenceOpenHashSet<>();
+    final IntRBTreeSet y_values = collectVertices(mesh);
 
     int y_previous = Math.toIntExact(bounds.minimumY());
     for (final int y_current : y_values) {
@@ -65,34 +66,10 @@ public final class RoomModelLiquidCells
           (long) y_previous,
           (long) y_current);
 
-      overlapped_polygons.clear();
-      tree.overlappedBy(area, overlapped_polygons);
-
-      final ReferenceArrayList<RoomPolyEdgeType> edges_sorted =
-        new ReferenceArrayList<>();
-
-      for (final RoomPolygonType p : overlapped_polygons) {
-        for (final RoomPolyEdgeType e : p.edges()) {
-          if (!e.isExternal()) {
-            continue;
-          }
-
-          final Vector2D n = e.normal();
-          if (n.x() == 0.0) {
-            continue;
-          }
-
-          final AreaL edge_area = e.bounds();
-          if (AreasL.overlaps(area, edge_area)) {
-            edges_sorted.add(e);
-          }
-        }
-      }
-
-      edges_sorted.sort(Comparator.comparingLong(o -> o.bounds().minimumX()));
-
+      final ReferenceArrayList<PolygonEdgeType> edges_sorted =
+        collectEdges(tree, area);
       final ReferenceArrayList<EdgeRecord> records =
-        collectEdges(edges_sorted, area);
+        collectEdgeRecords(edges_sorted, area);
 
       LOG.debug(
         "{}:{} edges {} ({})",
@@ -101,13 +78,14 @@ public final class RoomModelLiquidCells
         Integer.valueOf(edges_sorted.size()),
         Integer.valueOf(records.size()));
 
-      for (int index = 0; index < records.size(); index += 2) {
-        final EdgeRecord record0 = records.get(index);
-        final EdgeRecord record1 = records.get(index + 1);
+      boolean inside_polygon = false;
+      for (int index = 1; index < records.size(); ++index) {
+        final EdgeRecord record0 = records.get(index - 1);
+        final EdgeRecord record1 = records.get(index);
 
-        {
-          final ReferenceArrayList<Vector2I> vs =
-            new ReferenceArrayList<>(4);
+        inside_polygon = !inside_polygon;
+        if (inside_polygon) {
+          final ReferenceArrayList<Vector2I> vs = new ReferenceArrayList<>(4);
           vs.add(record0.intersection_max);
           vs.add(record0.intersection_min);
           vs.add(record1.intersection_min);
@@ -123,25 +101,41 @@ public final class RoomModelLiquidCells
     return new RoomModelLiquidCells(polygons, intersections);
   }
 
-  private static final class EdgeRecord
+  private static ReferenceArrayList<PolygonEdgeType> collectEdges(
+    final QuadTreeReadableLType<PolygonType> tree,
+    final AreaL area)
   {
-    private final @Nullable RoomPolyEdgeType edge;
-    private final Vector2I intersection_min;
-    private final Vector2I intersection_max;
+    final ReferenceOpenHashSet<PolygonType> overlapped_polygons =
+      new ReferenceOpenHashSet<>();
+    tree.overlappedBy(area, overlapped_polygons);
 
-    EdgeRecord(
-      final RoomPolyEdgeType edge,
-      final Vector2I intersection_min,
-      final Vector2I intersection_max)
-    {
-      this.edge = edge;
-      this.intersection_min = intersection_min;
-      this.intersection_max = intersection_max;
+    final ReferenceArrayList<PolygonEdgeType> edges_sorted =
+      new ReferenceArrayList<>();
+
+    for (final PolygonType p : overlapped_polygons) {
+      for (final PolygonEdgeType e : p.edges()) {
+        if (!e.isExternal()) {
+          continue;
+        }
+
+        final Vector2D n = e.normal();
+        if (n.x() == 0.0) {
+          continue;
+        }
+
+        final AreaL edge_area = e.bounds();
+        if (AreasL.overlaps(area, edge_area)) {
+          edges_sorted.add(e);
+        }
+      }
     }
+
+    edges_sorted.sort(Comparator.comparingLong(o -> o.bounds().minimumX()));
+    return edges_sorted;
   }
 
-  private static ReferenceArrayList<EdgeRecord> collectEdges(
-    final ReferenceArrayList<RoomPolyEdgeType> edges_sorted,
+  private static ReferenceArrayList<EdgeRecord> collectEdgeRecords(
+    final ReferenceArrayList<PolygonEdgeType> edges_sorted,
     final AreaL area)
   {
     final ReferenceArrayList<EdgeRecord> records =
@@ -156,7 +150,7 @@ public final class RoomModelLiquidCells
       Vector2I.of(Math.toIntExact(area.minimumX()), y_max)));
 
     for (int index = 0; index < edges_sorted.size(); ++index) {
-      final RoomPolyEdgeType edge = edges_sorted.get(index);
+      final PolygonEdgeType edge = edges_sorted.get(index);
 
       final Vector2D inter_y_min =
         RoomLineIntersections.intersection(
@@ -187,13 +181,30 @@ public final class RoomModelLiquidCells
   }
 
   private static IntRBTreeSet collectVertices(
-    final RoomModelReadableType model)
+    final MeshReadableType mesh)
   {
     final IntRBTreeSet ys = new IntRBTreeSet();
-    for (final RoomPolyVertexType v : model.vertices()) {
+    for (final PolygonVertexType v : mesh.vertices()) {
       ys.add(v.position().y());
     }
-    ys.add(Math.toIntExact(model.polygonTree().bounds().maximumY()));
+    ys.add(Math.toIntExact(mesh.polygonTree().bounds().maximumY()));
     return ys;
+  }
+
+  private static final class EdgeRecord
+  {
+    private final @Nullable PolygonEdgeType edge;
+    private final Vector2I intersection_min;
+    private final Vector2I intersection_max;
+
+    EdgeRecord(
+      final PolygonEdgeType edge,
+      final Vector2I intersection_min,
+      final Vector2I intersection_max)
+    {
+      this.edge = edge;
+      this.intersection_min = intersection_min;
+      this.intersection_max = intersection_max;
+    }
   }
 }

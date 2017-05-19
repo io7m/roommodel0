@@ -1,5 +1,6 @@
 package com.io7m.roommodel0.mesh;
 
+import com.io7m.jregions.core.unparameterized.areas.AreaL;
 import com.io7m.jtensors.core.unparameterized.vectors.Vector2D;
 
 import java.util.Set;
@@ -15,4 +16,6 @@ public interface PolygonEdgeType
   boolean isExternal();
 
   Vector2D normal();
+
+  AreaL bounds();
 }

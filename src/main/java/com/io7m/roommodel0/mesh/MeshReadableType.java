@@ -17,4 +17,6 @@ public interface MeshReadableType
 
   Optional<PolygonType> polygonFind(
     Vector2I position);
+
+  Collection<PolygonVertexType> vertices();
 }

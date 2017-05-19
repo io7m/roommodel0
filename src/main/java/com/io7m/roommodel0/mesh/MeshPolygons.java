@@ -143,15 +143,38 @@ public final class MeshPolygons
     for (i = 0, j = points.size() - 1; i < points.size(); j = i++) {
       final Vector2I p0 = points.get(i);
       final Vector2I p1 = points.get(j);
-      if (((p0.y() > point.y()) != (p1.y() > point.y()))) {
-        final int p1x_p0x_delta = p1.x() - p0.x();
-        final int p1y_p0y_delta = p1.y() - p0.y();
-        final int py_p0y_delta = point.y() - p0.y();
-        if ((point.x() < (((p1x_p0x_delta * py_p0y_delta) / p1y_p0y_delta) + p0.x()))) {
+      final long p0y = (long) p0.y();
+      final long p1y = (long) p1.y();
+      final long py = (long) point.y();
+      if (((p0y > py) != (p1y > py))) {
+        final long p0x = (long) p0.x();
+        final long p1x = (long) p1.x();
+        final long p1x_p0x_delta = Math.subtractExact(p1x, p0x);
+        final long p1y_p0y_delta = Math.subtractExact(p1y, p0y);
+        final long py_p0y_delta = Math.subtractExact(py, p0y);
+        final long dm = Math.multiplyExact(p1x_p0x_delta, py_p0y_delta);
+        final long dd = dm / p1y_p0y_delta;
+        final long sum = Math.subtractExact(dd, p0x);
+        final long px = (long) point.x();
+        if (px < sum) {
           result = !result;
         }
       }
     }
     return result;
+  }
+
+  static boolean isClockwiseOrder(
+    final List<Vector2I> vertices)
+  {
+    long sum = 0L;
+    for (int index = 0; index < vertices.size(); index++) {
+      final Vector2I v1 = vertices.get(index);
+      final Vector2I v2 = vertices.get((index + 1) % vertices.size());
+      final long xd = Math.subtractExact((long) v2.x(), (long) v1.x());
+      final long yd = Math.addExact((long) v2.y(), (long) v1.y());
+      sum = Math.addExact(sum, Math.multiplyExact(xd, yd));
+    }
+    return sum > 0L;
   }
 }

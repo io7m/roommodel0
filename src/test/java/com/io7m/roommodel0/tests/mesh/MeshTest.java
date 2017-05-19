@@ -1,9 +1,6 @@
 package com.io7m.roommodel0.tests.mesh;
 
-import com.io7m.jfunctional.Unit;
 import com.io7m.jregions.core.unparameterized.areas.AreasL;
-import com.io7m.roommodel0.RoomModel;
-import com.io7m.roommodel0.RoomModelType;
 import com.io7m.roommodel0.mesh.Mesh;
 import com.io7m.roommodel0.mesh.MeshType;
 import org.slf4j.Logger;

@@ -31,6 +31,7 @@ public final class Mesh implements MeshType
 {
   private final SimpleGraph<Vertex, Edge> vertex_connectivity;
   private final Long2ReferenceRBTreeMap<Vertex> vertices;
+  private final Collection<PolygonVertexType> vertices_view;
   private final Long2ReferenceRBTreeMap<Polygon> polygons;
   private final Collection<PolygonType> polygons_view;
   private final QuadTreeLType<Polygon> polygons_tree;
@@ -45,6 +46,8 @@ public final class Mesh implements MeshType
 
     this.vertices =
       new Long2ReferenceRBTreeMap<>();
+    this.vertices_view =
+      Collections.unmodifiableCollection(this.vertices.values());
     this.vertex_connectivity =
       new SimpleGraph<>(Edge::new);
 
@@ -238,6 +241,23 @@ public final class Mesh implements MeshType
       this.checkVerticesExist(vids);
     checkVerticesAreConvex(poly_vertices);
 
+    final List<Vector2I> vertex_positions =
+      poly_vertices.stream()
+        .map(PolygonVertexType::position)
+        .collect(Collectors.toList());
+
+    if (MeshPolygons.isClockwiseOrder(vertex_positions)) {
+      Collections.reverse(poly_vertices);
+    }
+
+    final AreaL poly_bounds =
+      MeshPolygons.bounds(vertex_positions);
+
+    if (!AreasL.contains(this.bounds, poly_bounds)) {
+      throw new MeshExceptionPolygonOutsideBounds(
+        "Polygon cannot fit into the room");
+    }
+
     final List<Pair<Vertex, Vertex>> edge_pairs = pairVertices(
       poly_vertices);
     final ReferenceArrayList<Edge> edges =
@@ -255,16 +275,6 @@ public final class Mesh implements MeshType
         edge = new Edge(v0, v1);
       }
       edges.add(edge);
-    }
-
-    final AreaL poly_bounds =
-      MeshPolygons.bounds(poly_vertices.stream()
-                            .map(PolygonVertexType::position)
-                            .collect(Collectors.toList()));
-
-    if (!AreasL.contains(this.bounds, poly_bounds)) {
-      throw new MeshExceptionPolygonOutsideBounds(
-        "Polygon cannot fit into the room");
     }
 
     final Polygon poly = new Polygon(id, poly_bounds);
@@ -464,6 +474,12 @@ public final class Mesh implements MeshType
     }
 
     return Optional.empty();
+  }
+
+  @Override
+  public Collection<PolygonVertexType> vertices()
+  {
+    return this.vertices_view;
   }
 
   @Override
@@ -736,6 +752,24 @@ public final class Mesh implements MeshType
       return MeshPolygons.normal(
         this.vertex0.position,
         this.vertex1.position);
+    }
+
+    @Override
+    public AreaL bounds()
+    {
+      return AreaL.of(
+        Math.min(
+          (long) this.vertex0.position.x(),
+          (long) this.vertex1.position.x()),
+        Math.max(
+          (long) this.vertex0.position.x(),
+          (long) this.vertex1.position.x()),
+        Math.min(
+          (long) this.vertex0.position.y(),
+          (long) this.vertex1.position.y()),
+        Math.max(
+          (long) this.vertex0.position.y(),
+          (long) this.vertex1.position.y()));
     }
   }
 
