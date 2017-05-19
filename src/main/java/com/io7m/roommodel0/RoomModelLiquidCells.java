@@ -2,7 +2,6 @@ package com.io7m.roommodel0;
 
 import com.io7m.jaffirm.core.Invariants;
 import com.io7m.jaffirm.core.Preconditions;
-import com.io7m.jnull.NullCheck;
 import com.io7m.jnull.Nullable;
 import com.io7m.jregions.core.unparameterized.areas.AreaI;
 import com.io7m.jregions.core.unparameterized.areas.AreasI;
@@ -146,6 +145,10 @@ public final class RoomModelLiquidCells
     }
   }
 
+  /**
+   * Partition the list of intersections into pairs.
+   */
+
   private static ReferenceArrayList<EdgePair> collectEdgePairs(
     final ReferenceArrayList<EdgeIntersection> intersections)
   {
@@ -164,6 +167,11 @@ public final class RoomModelLiquidCells
     return pairs;
   }
 
+  /**
+   * Determine the set of Y values on which all of the vertices in the mesh
+   * occur.
+   */
+
   private static IntRBTreeSet collectVertexYValues(
     final MeshReadableType mesh)
   {
@@ -174,6 +182,10 @@ public final class RoomModelLiquidCells
     ys.add(mesh.polygonTree().bounds().maximumY());
     return ys;
   }
+
+  /**
+   * Collect the edge intersections for the current span.
+   */
 
   private static ReferenceArrayList<EdgeIntersection> collectEdgeIntersections(
     final QuadTreeReadableIType<PolygonType> tree,
