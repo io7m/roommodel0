@@ -163,11 +163,6 @@ public final class RoomModelLiquidCells
     return pairs;
   }
 
-  public MeshReadableType mesh()
-  {
-    return this.mesh;
-  }
-
   private static IntRBTreeSet collectVertexYValues(
     final MeshReadableType mesh)
   {
@@ -177,20 +172,6 @@ public final class RoomModelLiquidCells
     }
     ys.add(mesh.polygonTree().bounds().maximumY());
     return ys;
-  }
-
-  private static final class EdgePair
-  {
-    private final EdgeIntersection intersection0;
-    private final EdgeIntersection intersection1;
-
-    EdgePair(
-      final EdgeIntersection in_record0,
-      final EdgeIntersection in_record1)
-    {
-      this.intersection0 = notNull(in_record0, "Record 0");
-      this.intersection1 = notNull(in_record1, "Record 1");
-    }
   }
 
   private static ReferenceArrayList<EdgeIntersection> collectEdgeIntersections(
@@ -306,6 +287,25 @@ public final class RoomModelLiquidCells
     });
 
     return intersections;
+  }
+
+  public MeshReadableType mesh()
+  {
+    return this.mesh;
+  }
+
+  private static final class EdgePair
+  {
+    private final EdgeIntersection intersection0;
+    private final EdgeIntersection intersection1;
+
+    EdgePair(
+      final EdgeIntersection in_record0,
+      final EdgeIntersection in_record1)
+    {
+      this.intersection0 = notNull(in_record0, "Record 0");
+      this.intersection1 = notNull(in_record1, "Record 1");
+    }
   }
 
   private static final class EdgeIntersection
