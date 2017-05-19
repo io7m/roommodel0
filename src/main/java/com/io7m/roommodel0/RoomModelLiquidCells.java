@@ -2,6 +2,7 @@ package com.io7m.roommodel0;
 
 import com.io7m.jaffirm.core.Invariants;
 import com.io7m.jaffirm.core.Preconditions;
+import com.io7m.jnull.NullCheck;
 import com.io7m.jnull.Nullable;
 import com.io7m.jregions.core.unparameterized.areas.AreaI;
 import com.io7m.jregions.core.unparameterized.areas.AreasI;
@@ -300,11 +301,11 @@ public final class RoomModelLiquidCells
     private final EdgeIntersection intersection1;
 
     EdgePair(
-      final EdgeIntersection in_record0,
-      final EdgeIntersection in_record1)
+      final EdgeIntersection in_intersection0,
+      final EdgeIntersection in_intersection1)
     {
-      this.intersection0 = notNull(in_record0, "Record 0");
-      this.intersection1 = notNull(in_record1, "Record 1");
+      this.intersection0 = notNull(in_intersection0, "Intersection 0");
+      this.intersection1 = notNull(in_intersection1, "Intersection 1");
     }
   }
 
@@ -320,8 +321,8 @@ public final class RoomModelLiquidCells
       final Vector2I intersection_max)
     {
       this.edge = edge;
-      this.minimum = intersection_min;
-      this.maximum = intersection_max;
+      this.minimum = notNull(intersection_min, "Minimum");
+      this.maximum = notNull(intersection_max, "Maximum");
     }
   }
 }
