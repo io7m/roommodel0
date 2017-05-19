@@ -134,7 +134,9 @@ public final class RoomModelLiquidCells
           break;
         }
         default: {
-          throw new UnreachableCodeException();
+          LOG.debug("ignoring polygon with {} vertices",
+                    Integer.valueOf(distinct_positions.size()));
+          continue;
         }
       }
 
