@@ -135,14 +135,28 @@ public final class RoomModelLiquidCells
       for (final PolygonVertexType v : polygon.vertices()) {
         for (final PolygonType vp : v.polygons()) {
           if (!Objects.equals(vp.id(), polygon.id())) {
-            LOG.debug(
-              "{} touches {}",
-              Long.valueOf(polygon.id().value()),
-              Long.valueOf(vp.id().value()));
+            if (isAbove(poly_bounds, vp.bounds())) {
+              LOG.debug(
+                "{} is above {}",
+                Long.valueOf(polygon.id().value()),
+                Long.valueOf(vp.id().value()));
+            } else {
+              LOG.debug(
+                "{} is below {}",
+                Long.valueOf(polygon.id().value()),
+                Long.valueOf(vp.id().value()));
+            }
           }
         }
       }
     }
+  }
+
+  private static boolean isAbove(
+    final AreaI area0,
+    final AreaI area1)
+  {
+    return area0.maximumY() <= area1.minimumY();
   }
 
   /**
