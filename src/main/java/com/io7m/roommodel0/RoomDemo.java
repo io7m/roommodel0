@@ -16,13 +16,10 @@
 
 package com.io7m.roommodel0;
 
-import com.io7m.jfunctional.Pair;
 import com.io7m.jmurmur.Murmur3;
 import com.io7m.jregions.core.unparameterized.areas.AreaI;
-import com.io7m.jregions.core.unparameterized.areas.AreaL;
 import com.io7m.jspatial.api.TreeVisitResult;
 import com.io7m.jspatial.api.quadtrees.QuadTreeReadableIType;
-import com.io7m.jspatial.api.quadtrees.QuadTreeReadableLType;
 import com.io7m.jtensors.core.unparameterized.vectors.Vector2D;
 import com.io7m.jtensors.core.unparameterized.vectors.Vector2I;
 import com.io7m.jtensors.core.unparameterized.vectors.Vectors2D;
@@ -69,7 +66,6 @@ import java.awt.event.MouseListener;
 import java.awt.event.MouseMotionListener;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
-import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -359,40 +355,35 @@ public final class RoomDemo
     private void paintLiquid(
       final Graphics2D gg)
     {
-      for (int p_index = 0; p_index < this.liquid_cells.polygons.size(); ++p_index) {
-        final List<Vector2I> p = this.liquid_cells.polygons.get(p_index);
+      for (final PolygonType p : this.liquid_cells.mesh().polygons()) {
+        final long p_id = p.id().value();
 
-        gg.setPaint(new Color(Murmur3.hashInt(p_index)));
+        gg.setPaint(new Color(Murmur3.hashLong(p_id)));
 
-        for (int index = 0; index < p.size(); ++index) {
-          final Vector2I v0 = p.get(index);
-          final Vector2I v1;
-          if (index + 1 < p.size()) {
-            v1 = p.get(index + 1);
+        final List<PolygonVertexType> vs = p.vertices();
+        for (int index = 0; index < vs.size(); ++index) {
+          final PolygonVertexType v0 = vs.get(index);
+          final PolygonVertexType v1;
+          if (index + 1 < vs.size()) {
+            v1 = vs.get(index + 1);
           } else {
-            v1 = p.get(0);
+            v1 = vs.get(0);
           }
-          gg.drawLine(v0.x(), v0.y(), v1.x(), v1.y());
+          gg.drawLine(
+            v0.position().x(),
+            v0.position().y(),
+            v1.position().x(),
+            v1.position().y());
         }
 
         {
-          final Vector2D c = RoomPolygons.barycenter(p);
-          gg.drawString(Integer.toString(p_index), (int) c.x(), (int) c.y());
+          final Vector2D c =
+            RoomPolygons.barycenter(
+              vs.stream()
+                .map(PolygonVertexType::position)
+                .collect(Collectors.toList()));
+          gg.drawString(Long.toString(p_id), (int) c.x(), (int) c.y());
         }
-      }
-
-      gg.setPaint(Color.RED);
-      for (final Pair<Vector2I, Vector2I> p : this.liquid_cells.intersections) {
-        final Vector2I p0 = p.getLeft();
-        final Vector2I p1 = p.getRight();
-
-        final int p0x = p0.x();
-        final int p0y = p0.y();
-        final int p1x = p1.x();
-        final int p1y = p1.y();
-        gg.drawLine(p0x, p0y, p1x, p1y);
-        gg.fillOval(p0x - 2, p0y - 2, 4, 4);
-        gg.fillOval(p1x - 2, p1y - 2, 4, 4);
       }
     }
 
