@@ -2,9 +2,9 @@ package com.io7m.roommodel0;
 
 import com.io7m.jfunctional.Pair;
 import com.io7m.jnull.Nullable;
-import com.io7m.jregions.core.unparameterized.areas.AreaL;
-import com.io7m.jregions.core.unparameterized.areas.AreasL;
-import com.io7m.jspatial.api.quadtrees.QuadTreeReadableLType;
+import com.io7m.jregions.core.unparameterized.areas.AreaI;
+import com.io7m.jregions.core.unparameterized.areas.AreasI;
+import com.io7m.jspatial.api.quadtrees.QuadTreeReadableIType;
 import com.io7m.jtensors.core.unparameterized.vectors.Vector2D;
 import com.io7m.jtensors.core.unparameterized.vectors.Vector2I;
 import com.io7m.roommodel0.mesh.MeshReadableType;
@@ -51,20 +51,16 @@ public final class RoomModelLiquidCells
     final ReferenceArrayList<Pair<Vector2I, Vector2I>> intersections =
       new ReferenceArrayList<>();
 
-    final QuadTreeReadableLType<PolygonType> tree = mesh.polygonTree();
-    final AreaL bounds = tree.bounds();
+    final QuadTreeReadableIType<PolygonType> tree = mesh.polygonTree();
+    final AreaI bounds = tree.bounds();
 
     final IntRBTreeSet y_values = collectVertices(mesh);
 
-    int y_previous = Math.toIntExact(bounds.minimumY());
+    int y_previous = bounds.minimumY();
     for (final int y_current : y_values) {
 
-      final AreaL area =
-        AreaL.of(
-          bounds.minimumX(),
-          bounds.maximumX(),
-          (long) y_previous,
-          (long) y_current);
+      final AreaI area =
+        AreaI.of(bounds.minimumX(), bounds.maximumX(), y_previous, y_current);
 
       final ReferenceArrayList<PolygonEdgeType> edges_sorted =
         collectEdges(tree, area);
@@ -102,8 +98,8 @@ public final class RoomModelLiquidCells
   }
 
   private static ReferenceArrayList<PolygonEdgeType> collectEdges(
-    final QuadTreeReadableLType<PolygonType> tree,
-    final AreaL area)
+    final QuadTreeReadableIType<PolygonType> tree,
+    final AreaI area)
   {
     final ReferenceOpenHashSet<PolygonType> overlapped_polygons =
       new ReferenceOpenHashSet<>();
@@ -123,8 +119,8 @@ public final class RoomModelLiquidCells
           continue;
         }
 
-        final AreaL edge_area = e.bounds();
-        if (AreasL.overlaps(area, edge_area)) {
+        final AreaI edge_area = e.bounds();
+        if (AreasI.overlaps(area, edge_area)) {
           edges_sorted.add(e);
         }
       }
@@ -136,18 +132,18 @@ public final class RoomModelLiquidCells
 
   private static ReferenceArrayList<EdgeRecord> collectEdgeRecords(
     final ReferenceArrayList<PolygonEdgeType> edges_sorted,
-    final AreaL area)
+    final AreaI area)
   {
     final ReferenceArrayList<EdgeRecord> records =
       new ReferenceArrayList<>(edges_sorted.size() + 2);
 
-    final int y_min = Math.toIntExact(area.minimumY());
-    final int y_max = Math.toIntExact(area.maximumY());
+    final int y_min = area.minimumY();
+    final int y_max = area.maximumY();
 
     records.add(new EdgeRecord(
       null,
-      Vector2I.of(Math.toIntExact(area.minimumX()), y_min),
-      Vector2I.of(Math.toIntExact(area.minimumX()), y_max)));
+      Vector2I.of(area.minimumX(), y_min),
+      Vector2I.of(area.minimumX(), y_max)));
 
     for (int index = 0; index < edges_sorted.size(); ++index) {
       final PolygonEdgeType edge = edges_sorted.get(index);
@@ -156,15 +152,15 @@ public final class RoomModelLiquidCells
         RoomLineIntersections.intersection(
           edge.vertex0().position(),
           edge.vertex1().position(),
-          Vector2I.of(Math.toIntExact(area.minimumX()), y_min),
-          Vector2I.of(Math.toIntExact(area.maximumX()), y_min)).get();
+          Vector2I.of(area.minimumX(), y_min),
+          Vector2I.of(area.maximumX(), y_min)).get();
 
       final Vector2D inter_y_max =
         RoomLineIntersections.intersection(
           edge.vertex0().position(),
           edge.vertex1().position(),
-          Vector2I.of(Math.toIntExact(area.minimumX()), y_max),
-          Vector2I.of(Math.toIntExact(area.maximumX()), y_max)).get();
+          Vector2I.of(area.minimumX(), y_max),
+          Vector2I.of(area.maximumX(), y_max)).get();
 
       records.add(new EdgeRecord(
         edge,
@@ -174,8 +170,8 @@ public final class RoomModelLiquidCells
 
     records.add(new EdgeRecord(
       null,
-      Vector2I.of(Math.toIntExact(area.maximumX()), y_min),
-      Vector2I.of(Math.toIntExact(area.maximumX()), y_max)));
+      Vector2I.of(area.maximumX(), y_min),
+      Vector2I.of(area.maximumX(), y_max)));
 
     return records;
   }
@@ -187,7 +183,7 @@ public final class RoomModelLiquidCells
     for (final PolygonVertexType v : mesh.vertices()) {
       ys.add(v.position().y());
     }
-    ys.add(Math.toIntExact(mesh.polygonTree().bounds().maximumY()));
+    ys.add(mesh.polygonTree().bounds().maximumY());
     return ys;
   }
 

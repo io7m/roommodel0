@@ -34,12 +34,17 @@
     <dependency>
       <groupId>com.io7m.jspatial</groupId>
       <artifactId>com.io7m.jspatial.api</artifactId>
-      <version>[3.0.0-SNAPSHOT, 4.0.0)</version>
+      <version>3.0.0-beta0002</version>
     </dependency>
     <dependency>
       <groupId>com.io7m.jspatial</groupId>
       <artifactId>com.io7m.jspatial.implementation</artifactId>
-      <version>[3.0.0-SNAPSHOT, 4.0.0)</version>
+      <version>3.0.0-beta0002</version>
+    </dependency>
+    <dependency>
+      <groupId>com.io7m.jmurmur</groupId>
+      <artifactId>com.io7m.jmurmur.core</artifactId>
+      <version>[1.1.0, 2.0.0)</version>
     </dependency>
 
     <dependency>

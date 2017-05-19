@@ -17,8 +17,11 @@
 package com.io7m.roommodel0;
 
 import com.io7m.jfunctional.Pair;
+import com.io7m.jmurmur.Murmur3;
+import com.io7m.jregions.core.unparameterized.areas.AreaI;
 import com.io7m.jregions.core.unparameterized.areas.AreaL;
 import com.io7m.jspatial.api.TreeVisitResult;
+import com.io7m.jspatial.api.quadtrees.QuadTreeReadableIType;
 import com.io7m.jspatial.api.quadtrees.QuadTreeReadableLType;
 import com.io7m.jtensors.core.unparameterized.vectors.Vector2D;
 import com.io7m.jtensors.core.unparameterized.vectors.Vector2I;
@@ -66,6 +69,7 @@ import java.awt.event.MouseListener;
 import java.awt.event.MouseMotionListener;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -141,7 +145,7 @@ public final class RoomDemo
 
       this.mesh =
         Mesh.create(
-          AreaL.of(16L, 16L * 32L, 16L, 10L * 32L));
+          AreaI.of(32, 16 * 32, 32, 10 * 32));
       this.undo_controller =
         new UndoController<>(this.mesh, 32);
       this.mesh_editing =
@@ -166,19 +170,16 @@ public final class RoomDemo
 
     private static void paintQuadTree(
       final Graphics2D g,
-      final QuadTreeReadableLType<PolygonType> q)
+      final QuadTreeReadableIType<PolygonType> q)
     {
       final Stroke s = g.getStroke();
       try {
         g.setColor(Color.PINK);
         g.setStroke(dashedStroke());
         q.iterateQuadrants(g, (gg, quadrant, depth) -> {
-          final AreaL area = quadrant.area();
+          final AreaI area = quadrant.area();
           gg.drawRect(
-            (int) area.minimumX(),
-            (int) area.minimumY(),
-            (int) area.sizeX(),
-            (int) area.sizeY());
+            area.minimumX(), area.minimumY(), area.sizeX(), area.sizeY());
           return TreeVisitResult.RESULT_CONTINUE;
         });
       } finally {
@@ -195,10 +196,10 @@ public final class RoomDemo
         g.setColor(Color.GRAY);
         g.setStroke(dashedStroke());
         g.drawRect(
-          (int) p.bounds().minimumX(),
-          (int) p.bounds().minimumY(),
-          (int) p.bounds().sizeX(),
-          (int) p.bounds().sizeY());
+          p.bounds().minimumX(),
+          p.bounds().minimumY(),
+          p.bounds().sizeX(),
+          p.bounds().sizeY());
       } finally {
         g.setStroke(s);
       }
@@ -358,9 +359,10 @@ public final class RoomDemo
     private void paintLiquid(
       final Graphics2D gg)
     {
-      gg.setPaint(new Color(0x00, 0xff, 0x0, 0x60));
       for (int p_index = 0; p_index < this.liquid_cells.polygons.size(); ++p_index) {
         final List<Vector2I> p = this.liquid_cells.polygons.get(p_index);
+
+        gg.setPaint(new Color(Murmur3.hashInt(p_index)));
 
         for (int index = 0; index < p.size(); ++index) {
           final Vector2I v0 = p.get(index);
@@ -451,7 +453,8 @@ public final class RoomDemo
     }
 
     @Override
-    public void paint(final Graphics2D g)
+    public void paint(
+      final Graphics2D g)
     {
 
     }

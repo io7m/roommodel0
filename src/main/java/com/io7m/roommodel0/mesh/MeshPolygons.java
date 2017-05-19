@@ -16,7 +16,7 @@
 
 package com.io7m.roommodel0.mesh;
 
-import com.io7m.jregions.core.unparameterized.areas.AreaL;
+import com.io7m.jregions.core.unparameterized.areas.AreaI;
 import com.io7m.jtensors.core.unparameterized.vectors.Vector2D;
 import com.io7m.jtensors.core.unparameterized.vectors.Vector2I;
 import com.io7m.jtensors.core.unparameterized.vectors.Vectors2D;
@@ -115,7 +115,7 @@ public final class MeshPolygons
     return Vector2D.of(x / (double) size, y / (double) size);
   }
 
-  static AreaL bounds(
+  static AreaI bounds(
     final List<Vector2I> vertices)
   {
     final int size = vertices.size();
@@ -130,7 +130,7 @@ public final class MeshPolygons
       x_max = Math.max(p.x(), x_max);
       y_max = Math.max(p.y(), y_max);
     }
-    return AreaL.of((long) x_min, (long) x_max, (long) y_min, (long) y_max);
+    return AreaI.of(x_min, x_max, y_min, y_max);
   }
 
   static boolean containsPoint(
@@ -143,20 +143,11 @@ public final class MeshPolygons
     for (i = 0, j = points.size() - 1; i < points.size(); j = i++) {
       final Vector2I p0 = points.get(i);
       final Vector2I p1 = points.get(j);
-      final long p0y = (long) p0.y();
-      final long p1y = (long) p1.y();
-      final long py = (long) point.y();
-      if (((p0y > py) != (p1y > py))) {
-        final long p0x = (long) p0.x();
-        final long p1x = (long) p1.x();
-        final long p1x_p0x_delta = Math.subtractExact(p1x, p0x);
-        final long p1y_p0y_delta = Math.subtractExact(p1y, p0y);
-        final long py_p0y_delta = Math.subtractExact(py, p0y);
-        final long dm = Math.multiplyExact(p1x_p0x_delta, py_p0y_delta);
-        final long dd = dm / p1y_p0y_delta;
-        final long sum = Math.subtractExact(dd, p0x);
-        final long px = (long) point.x();
-        if (px < sum) {
+      if (((p0.y() > point.y()) != (p1.y() > point.y()))) {
+        final int p1x_p0x_delta = p1.x() - p0.x();
+        final int p1y_p0y_delta = p1.y() - p0.y();
+        final int py_p0y_delta = point.y() - p0.y();
+        if ((point.x() < (((p1x_p0x_delta * py_p0y_delta) / p1y_p0y_delta) + p0.x()))) {
           result = !result;
         }
       }

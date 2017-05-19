@@ -1,6 +1,6 @@
 package com.io7m.roommodel0.tests.mesh;
 
-import com.io7m.jregions.core.unparameterized.areas.AreasL;
+import com.io7m.jregions.core.unparameterized.areas.AreasI;
 import com.io7m.roommodel0.mesh.Mesh;
 import com.io7m.roommodel0.mesh.MeshType;
 import org.slf4j.Logger;
@@ -24,6 +24,6 @@ public final class MeshTest extends MeshContract
   protected MeshType emptyMesh()
   {
     return Mesh.create(
-      AreasL.create(-2048L, -2048L, 4096L, 4096L));
+      AreasI.create(-2048, -2048, 4096, 4096));
   }
 }

@@ -4,12 +4,12 @@ import com.io7m.jaffirm.core.Invariants;
 import com.io7m.jaffirm.core.Postconditions;
 import com.io7m.jfunctional.Pair;
 import com.io7m.jnull.NullCheck;
-import com.io7m.jregions.core.unparameterized.areas.AreaL;
-import com.io7m.jregions.core.unparameterized.areas.AreasL;
-import com.io7m.jspatial.api.quadtrees.QuadTreeConfigurationL;
-import com.io7m.jspatial.api.quadtrees.QuadTreeLType;
-import com.io7m.jspatial.api.quadtrees.QuadTreeReadableLType;
-import com.io7m.jspatial.implementation.QuadTreeL;
+import com.io7m.jregions.core.unparameterized.areas.AreaI;
+import com.io7m.jregions.core.unparameterized.areas.AreasI;
+import com.io7m.jspatial.api.quadtrees.QuadTreeConfigurationI;
+import com.io7m.jspatial.api.quadtrees.QuadTreeIType;
+import com.io7m.jspatial.api.quadtrees.QuadTreeReadableIType;
+import com.io7m.jspatial.implementation.QuadTreeI;
 import com.io7m.jtensors.core.unparameterized.vectors.Vector2D;
 import com.io7m.jtensors.core.unparameterized.vectors.Vector2I;
 import it.unimi.dsi.fastutil.longs.Long2ReferenceOpenHashMap;
@@ -34,13 +34,13 @@ public final class Mesh implements MeshType
   private final Collection<PolygonVertexType> vertices_view;
   private final Long2ReferenceRBTreeMap<Polygon> polygons;
   private final Collection<PolygonType> polygons_view;
-  private final QuadTreeLType<Polygon> polygons_tree;
-  private final AreaL bounds;
+  private final QuadTreeIType<Polygon> polygons_tree;
+  private final AreaI bounds;
   private long vertex_ids;
   private long polygon_ids;
 
   private Mesh(
-    final AreaL in_bounds)
+    final AreaI in_bounds)
   {
     this.bounds = NullCheck.notNull(in_bounds, "Bounds");
 
@@ -56,19 +56,19 @@ public final class Mesh implements MeshType
     this.polygons_view =
       castCollection(ReferenceCollections.unmodifiable(this.polygons.values()));
     this.polygons_tree =
-      QuadTreeL.create(
-        QuadTreeConfigurationL.of(
-          this.bounds, 16L, 16L, true));
+      QuadTreeI.create(
+        QuadTreeConfigurationI.of(
+          this.bounds, 16, 16, true));
 
     this.vertex_ids = 0L;
     this.polygon_ids = 0L;
   }
 
   @SuppressWarnings("unchecked")
-  private static <A, B> QuadTreeReadableLType<B> castQuadTree(
-    final QuadTreeReadableLType<A> q)
+  private static <A, B> QuadTreeReadableIType<B> castQuadTree(
+    final QuadTreeReadableIType<A> q)
   {
-    return (QuadTreeReadableLType<B>) q;
+    return (QuadTreeReadableIType<B>) q;
   }
 
   @SuppressWarnings("unchecked")
@@ -79,7 +79,7 @@ public final class Mesh implements MeshType
   }
 
   public static MeshType create(
-    final AreaL bounds)
+    final AreaI bounds)
   {
     return new Mesh(bounds);
   }
@@ -154,7 +154,7 @@ public final class Mesh implements MeshType
 
     final Vertex v = this.checkVertexExists(vertex_id);
 
-    final Long2ReferenceOpenHashMap<AreaL> bounds_by_polygon =
+    final Long2ReferenceOpenHashMap<AreaI> bounds_by_polygon =
       new Long2ReferenceOpenHashMap<>(v.polygons.size());
 
     for (final Polygon p : v.polygons) {
@@ -182,8 +182,8 @@ public final class Mesh implements MeshType
         throw new MeshExceptionPolygonNotConvex(sb.toString());
       }
 
-      final AreaL new_bounds = MeshPolygons.bounds(pv);
-      if (!AreasL.contains(this.bounds, new_bounds)) {
+      final AreaI new_bounds = MeshPolygons.bounds(pv);
+      if (!AreasI.contains(this.bounds, new_bounds)) {
         final StringBuilder sb = new StringBuilder(128);
         sb.append("Setting vertex position would make polygon exceed bounds.");
         sb.append(System.lineSeparator());
@@ -250,10 +250,10 @@ public final class Mesh implements MeshType
       Collections.reverse(poly_vertices);
     }
 
-    final AreaL poly_bounds =
+    final AreaI poly_bounds =
       MeshPolygons.bounds(vertex_positions);
 
-    if (!AreasL.contains(this.bounds, poly_bounds)) {
+    if (!AreasI.contains(this.bounds, poly_bounds)) {
       throw new MeshExceptionPolygonOutsideBounds(
         "Polygon cannot fit into the room");
     }
@@ -418,7 +418,7 @@ public final class Mesh implements MeshType
   }
 
   @Override
-  public QuadTreeReadableLType<PolygonType> polygonTree()
+  public QuadTreeReadableIType<PolygonType> polygonTree()
   {
     return castQuadTree(this.polygons_tree);
   }
@@ -429,11 +429,11 @@ public final class Mesh implements MeshType
   {
     final ReferenceOpenHashSet<Polygon> results =
       new ReferenceOpenHashSet<>();
-    final AreaL area = AreasL.create(
-      (long) (position.x() - 1),
-      (long) (position.y() - 1),
-      2L,
-      2L);
+    final AreaI area = AreasI.create(
+      position.x() - 1,
+      position.y() - 1,
+      2,
+      2);
     this.polygons_tree.overlappedBy(area, results);
 
     for (final Polygon poly : results) {
@@ -455,11 +455,11 @@ public final class Mesh implements MeshType
 
     final ReferenceOpenHashSet<Polygon> results =
       new ReferenceOpenHashSet<>();
-    final AreaL area = AreasL.create(
-      (long) (position.x() - 1),
-      (long) (position.y() - 1),
-      2L,
-      2L);
+    final AreaI area = AreasI.create(
+      position.x() - 1,
+      position.y() - 1,
+      2,
+      2);
     this.polygons_tree.overlappedBy(area, results);
 
     for (final Polygon poly : results) {
@@ -532,9 +532,9 @@ public final class Mesh implements MeshType
           sb.append(v);
           errors.add(sb.toString());
         }
-        final long vx = (long) v.position.x();
-        final long vy = (long) v.position.y();
-        if (!AreasL.containsPoint(this.bounds, vx, vy)) {
+        final int vx = v.position.x();
+        final int vy = v.position.y();
+        if (!AreasI.containsPoint(this.bounds, vx, vy)) {
           final StringBuilder sb = new StringBuilder(128);
           sb.append("Polygon ");
           sb.append(p);
@@ -615,12 +615,12 @@ public final class Mesh implements MeshType
     private final ReferenceArrayList<Vertex> vertices;
     private final List<PolygonVertexType> vertices_view;
     private final PolygonID id;
-    private AreaL bounds;
+    private AreaI bounds;
     private boolean deleted;
 
     Polygon(
       final PolygonID in_id,
-      final AreaL in_bounds)
+      final AreaI in_bounds)
     {
       this.id = in_id;
       this.bounds = NullCheck.notNull(in_bounds, "Bounds");
@@ -646,7 +646,7 @@ public final class Mesh implements MeshType
     }
 
     @Override
-    public AreaL bounds()
+    public AreaI bounds()
     {
       return this.bounds;
     }
@@ -755,21 +755,13 @@ public final class Mesh implements MeshType
     }
 
     @Override
-    public AreaL bounds()
+    public AreaI bounds()
     {
-      return AreaL.of(
-        Math.min(
-          (long) this.vertex0.position.x(),
-          (long) this.vertex1.position.x()),
-        Math.max(
-          (long) this.vertex0.position.x(),
-          (long) this.vertex1.position.x()),
-        Math.min(
-          (long) this.vertex0.position.y(),
-          (long) this.vertex1.position.y()),
-        Math.max(
-          (long) this.vertex0.position.y(),
-          (long) this.vertex1.position.y()));
+      return AreaI.of(
+        Math.min(this.vertex0.position.x(), this.vertex1.position.x()),
+        Math.max(this.vertex0.position.x(), this.vertex1.position.x()),
+        Math.min(this.vertex0.position.y(), this.vertex1.position.y()),
+        Math.max(this.vertex0.position.y(), this.vertex1.position.y()));
     }
   }
 
