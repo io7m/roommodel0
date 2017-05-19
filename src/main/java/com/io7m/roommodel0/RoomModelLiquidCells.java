@@ -1,6 +1,7 @@
 package com.io7m.roommodel0;
 
 import com.io7m.jaffirm.core.Invariants;
+import com.io7m.jaffirm.core.Preconditions;
 import com.io7m.jnull.Nullable;
 import com.io7m.jregions.core.unparameterized.areas.AreaI;
 import com.io7m.jregions.core.unparameterized.areas.AreasI;
@@ -145,12 +146,19 @@ public final class RoomModelLiquidCells
   }
 
   private static ReferenceArrayList<EdgePair> collectEdgePairs(
-    final ReferenceArrayList<EdgeIntersection> records)
+    final ReferenceArrayList<EdgeIntersection> intersections)
   {
+    Preconditions.checkPreconditionI(
+      intersections.size(),
+      intersections.size() % 2 == 0,
+      i -> "Intersection list size must be even");
+
     final ReferenceArrayList<EdgePair> pairs =
-      new ReferenceArrayList<>(records.size() / 2);
-    for (int index = 0; index < records.size(); index += 2) {
-      pairs.add(new EdgePair(records.get(index), records.get(index + 1)));
+      new ReferenceArrayList<>(intersections.size() / 2);
+    for (int index = 0; index < intersections.size(); index += 2) {
+      pairs.add(new EdgePair(
+        intersections.get(index),
+        intersections.get(index + 1)));
     }
     return pairs;
   }
