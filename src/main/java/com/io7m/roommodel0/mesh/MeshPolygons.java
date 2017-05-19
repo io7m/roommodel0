@@ -166,6 +166,6 @@ public final class MeshPolygons
       final long yd = Math.addExact((long) v2.y(), (long) v1.y());
       sum = Math.addExact(sum, Math.multiplyExact(xd, yd));
     }
-    return sum <= 0L;
+    return sum > 0L;
   }
 }
