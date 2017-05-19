@@ -1,18 +1,18 @@
 package com.io7m.roommodel0;
 
+import com.io7m.jaffirm.core.Invariants;
 import com.io7m.jnull.Nullable;
 import com.io7m.jregions.core.unparameterized.areas.AreaI;
 import com.io7m.jregions.core.unparameterized.areas.AreasI;
 import com.io7m.jspatial.api.quadtrees.QuadTreeReadableIType;
 import com.io7m.jtensors.core.unparameterized.vectors.Vector2D;
 import com.io7m.jtensors.core.unparameterized.vectors.Vector2I;
-import com.io7m.junreachable.UnreachableCodeException;
 import com.io7m.roommodel0.mesh.Mesh;
+import com.io7m.roommodel0.mesh.MeshPolygons;
 import com.io7m.roommodel0.mesh.MeshReadableType;
 import com.io7m.roommodel0.mesh.MeshType;
 import com.io7m.roommodel0.mesh.PolygonEdgeType;
 import com.io7m.roommodel0.mesh.PolygonType;
-import com.io7m.roommodel0.mesh.PolygonVertexID;
 import com.io7m.roommodel0.mesh.PolygonVertexType;
 import it.unimi.dsi.fastutil.ints.IntRBTreeSet;
 import it.unimi.dsi.fastutil.objects.ReferenceArrayList;
@@ -20,8 +20,9 @@ import it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 import static com.io7m.jnull.NullCheck.notNull;
@@ -53,7 +54,9 @@ public final class RoomModelLiquidCells
     final IntRBTreeSet y_values = collectVertices(mesh);
     int y_previous = bounds.minimumY();
     for (final int y_current : y_values) {
-      processSpan(cell_mesh, tree, bounds, y_previous, y_current);
+      final AreaI span_bounds =
+        AreaI.of(bounds.minimumX(), bounds.maximumX(), y_previous, y_current);
+      processSpan(cell_mesh, tree, span_bounds);
       y_previous = y_current;
     }
 
@@ -66,45 +69,31 @@ public final class RoomModelLiquidCells
   private static void processSpan(
     final MeshType cell_mesh,
     final QuadTreeReadableIType<PolygonType> tree,
-    final AreaI span_bounds,
-    final int y_previous,
-    final int y_current)
+    final AreaI span_bounds)
   {
-    final AreaI area =
-      AreaI.of(
-        span_bounds.minimumX(),
-        span_bounds.maximumX(),
-        y_previous,
-        y_current);
-
-    final ReferenceArrayList<PolygonEdgeType> edges_sorted =
-      collectEdges(tree, area);
-    final ReferenceArrayList<EdgeRecord> records =
-      collectEdgeRecords(edges_sorted, area);
+    final ReferenceArrayList<EdgeIntersection> intersections =
+      collectEdgeIntersections(tree, span_bounds);
+    final ReferenceArrayList<EdgePair> pairs =
+      collectEdgePairs(intersections);
 
     LOG.debug(
       "{}:{} edges {} ({})",
-      Integer.valueOf(y_previous),
-      Integer.valueOf(y_current),
-      Integer.valueOf(edges_sorted.size()),
-      Integer.valueOf(records.size()));
+      Integer.valueOf(span_bounds.minimumY()),
+      Integer.valueOf(span_bounds.maximumY()),
+      Integer.valueOf(intersections.size()),
+      Integer.valueOf(pairs.size()));
 
-    boolean inside_polygon = false;
-    for (int index = 1; index < records.size(); ++index) {
-      final EdgeRecord record0 = records.get(index - 1);
-      final EdgeRecord record1 = records.get(index);
+    for (int index = 0; index < pairs.size(); ++index) {
+      final EdgePair pair = pairs.get(index);
 
-      inside_polygon = !inside_polygon;
-      if (!inside_polygon) {
-        continue;
-      }
+      LOG.debug("  {}:{}", pair.intersection0.edge, pair.intersection1.edge);
 
       final ReferenceArrayList<Vector2I> positions =
         new ReferenceArrayList<>(4);
-      positions.add(record0.intersection_max);
-      positions.add(record0.intersection_min);
-      positions.add(record1.intersection_min);
-      positions.add(record1.intersection_max);
+      positions.add(pair.intersection0.maximum);
+      positions.add(pair.intersection0.minimum);
+      positions.add(pair.intersection1.minimum);
+      positions.add(pair.intersection1.maximum);
 
       final List<Vector2I> distinct_positions =
         positions.stream().distinct().collect(Collectors.toList());
@@ -134,21 +123,36 @@ public final class RoomModelLiquidCells
           break;
         }
         default: {
-          LOG.debug("ignoring polygon with {} vertices",
-                    Integer.valueOf(distinct_positions.size()));
+          LOG.debug(
+            "ignoring polygon with {} vertices",
+            Integer.valueOf(distinct_positions.size()));
           continue;
         }
       }
 
+      final AreaI poly_bounds = polygon.bounds();
       for (final PolygonVertexType v : polygon.vertices()) {
         for (final PolygonType vp : v.polygons()) {
-          LOG.debug(
-            "{} touches {}",
-            Long.valueOf(polygon.id().value()),
-            Long.valueOf(vp.id().value()));
+          if (!Objects.equals(vp.id(), polygon.id())) {
+            LOG.debug(
+              "{} touches {}",
+              Long.valueOf(polygon.id().value()),
+              Long.valueOf(vp.id().value()));
+          }
         }
       }
     }
+  }
+
+  private static ReferenceArrayList<EdgePair> collectEdgePairs(
+    final ReferenceArrayList<EdgeIntersection> records)
+  {
+    final ReferenceArrayList<EdgePair> pairs =
+      new ReferenceArrayList<>(records.size() / 2);
+    for (int index = 0; index < records.size(); index += 2) {
+      pairs.add(new EdgePair(records.get(index), records.get(index + 1)));
+    }
+    return pairs;
   }
 
   public MeshReadableType mesh()
@@ -156,15 +160,49 @@ public final class RoomModelLiquidCells
     return this.mesh;
   }
 
-  private static ReferenceArrayList<PolygonEdgeType> collectEdges(
-    final QuadTreeReadableIType<PolygonType> tree,
-    final AreaI area)
+  private static IntRBTreeSet collectVertices(
+    final MeshReadableType mesh)
   {
+    final IntRBTreeSet ys = new IntRBTreeSet();
+    for (final PolygonVertexType v : mesh.vertices()) {
+      ys.add(v.position().y());
+    }
+    ys.add(mesh.polygonTree().bounds().maximumY());
+    return ys;
+  }
+
+  private static final class EdgePair
+  {
+    private final EdgeIntersection intersection0;
+    private final EdgeIntersection intersection1;
+
+    EdgePair(
+      final EdgeIntersection in_record0,
+      final EdgeIntersection in_record1)
+    {
+      this.intersection0 = notNull(in_record0, "Record 0");
+      this.intersection1 = notNull(in_record1, "Record 1");
+    }
+  }
+
+  private static ReferenceArrayList<EdgeIntersection> collectEdgeIntersections(
+    final QuadTreeReadableIType<PolygonType> tree,
+    final AreaI span_bounds)
+  {
+    //
+    // Get the set of polygons that are overlapped by the current span.
+    //
+
     final ReferenceOpenHashSet<PolygonType> overlapped_polygons =
       new ReferenceOpenHashSet<>();
-    tree.overlappedBy(area, overlapped_polygons);
+    tree.overlappedBy(span_bounds, overlapped_polygons);
 
-    final ReferenceArrayList<PolygonEdgeType> edges_sorted =
+    //
+    // For each polygon, collect each external edge that overlaps the span,
+    // ignoring those that point straight up/down.
+    //
+
+    final ReferenceArrayList<PolygonEdgeType> edges =
       new ReferenceArrayList<>();
 
     for (final PolygonType p : overlapped_polygons) {
@@ -179,87 +217,103 @@ public final class RoomModelLiquidCells
         }
 
         final AreaI edge_area = e.bounds();
-        if (AreasI.overlaps(area, edge_area)) {
-          edges_sorted.add(e);
+        if (AreasI.overlaps(span_bounds, edge_area)) {
+          edges.add(e);
         }
       }
     }
 
-    edges_sorted.sort(Comparator.comparingLong(o -> o.bounds().minimumX()));
-    return edges_sorted;
-  }
+    //
+    // For each collected edge, store the points at which each edge intersects
+    // the span bounds. Additionally, fake edge intersections are added for the
+    // start and end of the span.
+    //
 
-  private static ReferenceArrayList<EdgeRecord> collectEdgeRecords(
-    final ReferenceArrayList<PolygonEdgeType> edges_sorted,
-    final AreaI area)
-  {
-    final ReferenceArrayList<EdgeRecord> records =
-      new ReferenceArrayList<>(edges_sorted.size() + 2);
+    final int y_min = span_bounds.minimumY();
+    final int y_max = span_bounds.maximumY();
 
-    final int y_min = area.minimumY();
-    final int y_max = area.maximumY();
+    final ReferenceArrayList<EdgeIntersection> intersections =
+      new ReferenceArrayList<>();
 
-    records.add(new EdgeRecord(
+    intersections.add(new EdgeIntersection(
       null,
-      Vector2I.of(area.minimumX(), y_min),
-      Vector2I.of(area.minimumX(), y_max)));
+      Vector2I.of(span_bounds.minimumX(), y_min),
+      Vector2I.of(span_bounds.minimumX(), y_max)));
 
-    for (int index = 0; index < edges_sorted.size(); ++index) {
-      final PolygonEdgeType edge = edges_sorted.get(index);
+    for (int index = 0; index < edges.size(); ++index) {
+      final PolygonEdgeType edge = edges.get(index);
 
-      final Vector2D inter_y_min =
+      final Optional<Vector2D> y_min_opt =
         RoomLineIntersections.intersection(
           edge.vertex0().position(),
           edge.vertex1().position(),
-          Vector2I.of(area.minimumX(), y_min),
-          Vector2I.of(area.maximumX(), y_min)).get();
+          Vector2I.of(span_bounds.minimumX(), y_min),
+          Vector2I.of(span_bounds.maximumX(), y_min));
 
-      final Vector2D inter_y_max =
+      Invariants.checkInvariantV(
+        y_min_opt.isPresent(),
+        "Edge %s must intersect span %s", edge, span_bounds);
+
+      final Vector2D inter_y_min = y_min_opt.get();
+
+      final Optional<Vector2D> y_max_opt1 =
         RoomLineIntersections.intersection(
           edge.vertex0().position(),
           edge.vertex1().position(),
-          Vector2I.of(area.minimumX(), y_max),
-          Vector2I.of(area.maximumX(), y_max)).get();
+          Vector2I.of(span_bounds.minimumX(), y_max),
+          Vector2I.of(span_bounds.maximumX(), y_max));
 
-      records.add(new EdgeRecord(
+      Invariants.checkInvariantV(
+        y_min_opt.isPresent(),
+        "Edge %s must intersect span %s", edge, span_bounds);
+
+      final Vector2D inter_y_max = y_max_opt1.get();
+
+      intersections.add(new EdgeIntersection(
         edge,
         Vector2I.of((int) inter_y_min.x(), y_min),
         Vector2I.of((int) inter_y_max.x(), y_max)));
     }
 
-    records.add(new EdgeRecord(
+    intersections.add(new EdgeIntersection(
       null,
-      Vector2I.of(area.maximumX(), y_min),
-      Vector2I.of(area.maximumX(), y_max)));
+      Vector2I.of(span_bounds.maximumX(), y_min),
+      Vector2I.of(span_bounds.maximumX(), y_max)));
 
-    return records;
+    //
+    // Sort the intersections on the X axis.
+    //
+
+    intersections.sort((intersection0, intersection1) -> {
+      final AreaI bounds0 =
+        MeshPolygons.edgeBounds(intersection0.minimum, intersection0.maximum);
+      final AreaI bounds1 =
+        MeshPolygons.edgeBounds(intersection1.minimum, intersection1.maximum);
+      final int cmp_x_min =
+        Integer.compare(bounds0.minimumX(), bounds1.minimumX());
+      if (cmp_x_min == 0) {
+        return Integer.compare(bounds0.maximumX(), bounds1.maximumX());
+      }
+      return cmp_x_min;
+    });
+
+    return intersections;
   }
 
-  private static IntRBTreeSet collectVertices(
-    final MeshReadableType mesh)
-  {
-    final IntRBTreeSet ys = new IntRBTreeSet();
-    for (final PolygonVertexType v : mesh.vertices()) {
-      ys.add(v.position().y());
-    }
-    ys.add(mesh.polygonTree().bounds().maximumY());
-    return ys;
-  }
-
-  private static final class EdgeRecord
+  private static final class EdgeIntersection
   {
     private final @Nullable PolygonEdgeType edge;
-    private final Vector2I intersection_min;
-    private final Vector2I intersection_max;
+    private final Vector2I minimum;
+    private final Vector2I maximum;
 
-    EdgeRecord(
+    EdgeIntersection(
       final PolygonEdgeType edge,
       final Vector2I intersection_min,
       final Vector2I intersection_max)
     {
       this.edge = edge;
-      this.intersection_min = intersection_min;
-      this.intersection_max = intersection_max;
+      this.minimum = intersection_min;
+      this.maximum = intersection_max;
     }
   }
 }

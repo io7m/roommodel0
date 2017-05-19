@@ -757,11 +757,9 @@ public final class Mesh implements MeshType
     @Override
     public AreaI bounds()
     {
-      return AreaI.of(
-        Math.min(this.vertex0.position.x(), this.vertex1.position.x()),
-        Math.max(this.vertex0.position.x(), this.vertex1.position.x()),
-        Math.min(this.vertex0.position.y(), this.vertex1.position.y()),
-        Math.max(this.vertex0.position.y(), this.vertex1.position.y()));
+      return MeshPolygons.edgeBounds(
+        this.vertex0.position,
+        this.vertex1.position);
     }
   }
 

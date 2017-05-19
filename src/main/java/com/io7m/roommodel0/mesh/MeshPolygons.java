@@ -168,4 +168,15 @@ public final class MeshPolygons
     }
     return sum > 0L;
   }
+
+  public static AreaI edgeBounds(
+    final Vector2I p0,
+    final Vector2I p1)
+  {
+    return AreaI.of(
+      Math.min(p0.x(), p1.x()),
+      Math.max(p0.x(), p1.x()),
+      Math.min(p0.y(), p1.y()),
+      Math.max(p0.y(), p1.y()));
+  }
 }
