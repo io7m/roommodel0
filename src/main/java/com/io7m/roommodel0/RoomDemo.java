@@ -16,7 +16,6 @@
 
 package com.io7m.roommodel0;
 
-import com.io7m.jmurmur.Murmur3;
 import com.io7m.jregions.core.unparameterized.areas.AreaI;
 import com.io7m.jspatial.api.TreeVisitResult;
 import com.io7m.jspatial.api.quadtrees.QuadTreeReadableIType;
@@ -32,6 +31,7 @@ import com.io7m.roommodel0.mesh.MeshEditingVertexMoverType;
 import com.io7m.roommodel0.mesh.MeshReadableType;
 import com.io7m.roommodel0.mesh.MeshType;
 import com.io7m.roommodel0.mesh.PolygonEdgeType;
+import com.io7m.roommodel0.mesh.PolygonID;
 import com.io7m.roommodel0.mesh.PolygonType;
 import com.io7m.roommodel0.mesh.PolygonVertexType;
 import com.io7m.roommodel0.undo.UndoController;
@@ -42,6 +42,7 @@ import org.slf4j.LoggerFactory;
 
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
+import javax.swing.JCheckBoxMenuItem;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JMenu;
@@ -67,6 +68,7 @@ import java.awt.event.MouseMotionListener;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -132,6 +134,9 @@ public final class RoomDemo
     private Vector2I mouse;
     private Vector2I mouse_snap;
     private EditingOperationType edit_op;
+    private boolean show_grid = true;
+    private boolean show_liquid = true;
+    private boolean show_liquid_connects = true;
 
     PolygonCanvas(
       final PublishSubject<String> messages)
@@ -141,7 +146,7 @@ public final class RoomDemo
 
       this.mesh =
         Mesh.create(
-          AreaI.of(32, 16 * 32, 32, 10 * 32));
+          AreaI.of(32, 24 * 32, 32, 14 * 32));
       this.undo_controller =
         new UndoController<>(this.mesh, 32);
       this.mesh_editing =
@@ -318,9 +323,14 @@ public final class RoomDemo
       gg.setPaint(Color.WHITE);
       gg.fillRect(0, 0, this.getWidth(), this.getHeight());
 
-      this.paintGrid(gg);
+      if (this.show_grid) {
+        this.paintGrid(gg);
+      }
       this.paintModel(gg);
-      this.paintLiquid(gg);
+
+      if (this.show_liquid) {
+        this.paintLiquid(gg);
+      }
 
       {
         final EditingOperationType op = this.edit_op;
@@ -355,12 +365,17 @@ public final class RoomDemo
     private void paintLiquid(
       final Graphics2D gg)
     {
-      for (final PolygonType p : this.liquid_cells.mesh().polygons()) {
-        final long p_id = p.id().value();
+      final Map<PolygonID, RoomLiquidCellsType.CellType> all =
+        this.liquid_cells.cellsAll();
 
-        gg.setPaint(new Color(Murmur3.hashLong(p_id)));
+      for (final PolygonID id : all.keySet()) {
+        gg.setPaint(Color.CYAN.darker());
 
-        final List<PolygonVertexType> vs = p.vertices();
+        final RoomLiquidCellsType.CellType cell = all.get(id);
+        final PolygonType poly = cell.polygon();
+        final PolygonID p_id = poly.id();
+
+        final List<PolygonVertexType> vs = poly.vertices();
         for (int index = 0; index < vs.size(); ++index) {
           final PolygonVertexType v0 = vs.get(index);
           final PolygonVertexType v1;
@@ -376,13 +391,38 @@ public final class RoomDemo
             v1.position().y());
         }
 
-        {
-          final Vector2D c =
-            RoomPolygons.barycenter(
-              vs.stream()
-                .map(PolygonVertexType::position)
-                .collect(Collectors.toList()));
-          gg.drawString(Long.toString(p_id), (int) c.x(), (int) c.y());
+        final Vector2D poly_center =
+          RoomPolygons.barycenter(
+            vs.stream()
+              .map(PolygonVertexType::position)
+              .collect(Collectors.toList()));
+
+        gg.drawString(
+          Long.toString(p_id.value()),
+          (int) poly_center.x(),
+          (int) poly_center.y());
+
+        if (this.show_liquid_connects) {
+          final Color brighter = Color.CYAN.brighter();
+          gg.setPaint(new Color(
+            brighter.getRed(),
+            brighter.getGreen(),
+            brighter.getBlue(),
+            0x90));
+
+          for (final RoomLiquidCellsType.CellType below : cell.cellsBelow()) {
+            final Vector2D below_center =
+              RoomPolygons.barycenter(
+                below.polygon().vertices().stream()
+                  .map(PolygonVertexType::position)
+                  .collect(Collectors.toList()));
+
+            gg.drawLine(
+              (int) poly_center.x(),
+              (int) poly_center.y(),
+              (int) below_center.x(),
+              (int) below_center.y());
+          }
         }
       }
     }
@@ -781,9 +821,45 @@ public final class RoomDemo
       edit.setMnemonic('E');
       edit.add(edit_undo);
 
+      final JCheckBoxMenuItem view_grid =
+        new JCheckBoxMenuItem("Show Grid");
+      view_grid.setMnemonic('G');
+      view_grid.setSelected(true);
+      view_grid.addActionListener(
+        e -> {
+          this.canvas.show_grid = view_grid.isSelected();
+          this.canvas.repaint();
+        });
+
+      final JCheckBoxMenuItem view_liquid =
+        new JCheckBoxMenuItem("Show Liquid Cells");
+      view_liquid.setMnemonic('L');
+      view_liquid.setSelected(true);
+      view_liquid.addActionListener(
+        e -> {
+          this.canvas.show_liquid = view_liquid.isSelected();
+          this.canvas.repaint();
+        });
+
+      final JCheckBoxMenuItem view_liquid_connect =
+        new JCheckBoxMenuItem("Show Liquid Cells");
+      view_liquid_connect.setMnemonic('L');
+      view_liquid_connect.setSelected(true);
+      view_liquid_connect.addActionListener(
+        e -> {
+          this.canvas.show_liquid_connects = view_liquid_connect.isSelected();
+          this.canvas.repaint();
+        });
+
+      final JMenu view = new JMenu("View");
+      view.setMnemonic('V');
+      view.add(view_grid);
+      view.add(view_liquid);
+
       final JMenuBar menu = new JMenuBar();
       menu.add(file);
       menu.add(edit);
+      menu.add(view);
       this.setJMenuBar(menu);
 
       this.setPreferredSize(new Dimension(800, 600));

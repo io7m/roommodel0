@@ -13,6 +13,7 @@ import com.io7m.roommodel0.mesh.MeshPolygons;
 import com.io7m.roommodel0.mesh.MeshReadableType;
 import com.io7m.roommodel0.mesh.MeshType;
 import com.io7m.roommodel0.mesh.PolygonEdgeType;
+import com.io7m.roommodel0.mesh.PolygonID;
 import com.io7m.roommodel0.mesh.PolygonType;
 import com.io7m.roommodel0.mesh.PolygonVertexType;
 import it.unimi.dsi.fastutil.ints.IntRBTreeSet;
@@ -21,14 +22,17 @@ import it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
-import java.util.Objects;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import static com.io7m.jnull.NullCheck.notNull;
 
-public final class RoomModelLiquidCells
+public final class RoomModelLiquidCells implements RoomLiquidCellsType
 {
   private static final Logger LOG;
 
@@ -37,11 +41,21 @@ public final class RoomModelLiquidCells
   }
 
   private final MeshType mesh;
+  private final Set<Cell> cell_roots;
+  private final Set<CellType> cell_roots_view;
+  private final Map<PolygonID, CellType> cells_all_view;
+  private final Map<PolygonID, Cell> cells_all;
 
   private RoomModelLiquidCells(
-    final MeshType in_mesh)
+    final MeshType in_mesh,
+    final Map<PolygonID, Cell> in_cells_all,
+    final Set<Cell> in_cell_roots)
   {
     this.mesh = notNull(in_mesh, "Mesh");
+    this.cell_roots = notNull(in_cell_roots, "Cell roots");
+    this.cell_roots_view = Collections.unmodifiableSet(this.cell_roots);
+    this.cells_all = notNull(in_cells_all, "Cells");
+    this.cells_all_view = Collections.unmodifiableMap(this.cells_all);
   }
 
   public static RoomModelLiquidCells generate(
@@ -53,22 +67,33 @@ public final class RoomModelLiquidCells
     final QuadTreeReadableIType<PolygonType> tree = mesh.polygonTree();
     final AreaI bounds = tree.bounds();
     final IntRBTreeSet y_values = collectVertexYValues(mesh);
+    final Map<PolygonID, Cell> cells_all = new HashMap<>();
+    Map<PolygonID, Cell> cells_current = Collections.emptyMap();
+    Set<Cell> cell_roots = Collections.emptySet();
     int y_previous = bounds.minimumY();
     for (final int y_current : y_values) {
       final AreaI span_bounds =
         AreaI.of(bounds.minimumX(), bounds.maximumX(), y_previous, y_current);
-      processSpan(cell_mesh, tree, span_bounds);
+      cells_current = processSpan(
+        cell_mesh, cells_all, cells_current, tree, span_bounds);
+
+      if (y_previous == bounds.minimumY()) {
+        cell_roots = new ReferenceOpenHashSet<>(cells_current.values());
+      }
+
       y_previous = y_current;
     }
 
     LOG.debug(
       "created {} polygons",
       Integer.valueOf(cell_mesh.polygons().size()));
-    return new RoomModelLiquidCells(cell_mesh);
+    return new RoomModelLiquidCells(cell_mesh, cells_all, cell_roots);
   }
 
-  private static void processSpan(
+  private static Map<PolygonID, Cell> processSpan(
     final MeshType cell_mesh,
+    final Map<PolygonID, Cell> all_cells,
+    final Map<PolygonID, Cell> previous_cells,
     final QuadTreeReadableIType<PolygonType> tree,
     final AreaI span_bounds)
   {
@@ -77,17 +102,9 @@ public final class RoomModelLiquidCells
     final ReferenceArrayList<EdgePair> pairs =
       collectEdgePairs(intersections);
 
-    LOG.debug(
-      "{}:{} edges {} ({})",
-      Integer.valueOf(span_bounds.minimumY()),
-      Integer.valueOf(span_bounds.maximumY()),
-      Integer.valueOf(intersections.size()),
-      Integer.valueOf(pairs.size()));
-
+    final Map<PolygonID, Cell> cells = new HashMap<>();
     for (int index = 0; index < pairs.size(); ++index) {
       final EdgePair pair = pairs.get(index);
-
-      LOG.debug("  {}:{}", pair.intersection0.edge, pair.intersection1.edge);
 
       final ReferenceArrayList<Vector2I> positions =
         new ReferenceArrayList<>(4);
@@ -131,32 +148,115 @@ public final class RoomModelLiquidCells
         }
       }
 
-      final AreaI poly_bounds = polygon.bounds();
-      for (final PolygonVertexType v : polygon.vertices()) {
-        for (final PolygonType vp : v.polygons()) {
-          if (!Objects.equals(vp.id(), polygon.id())) {
-            if (isAbove(poly_bounds, vp.bounds())) {
-              LOG.debug(
-                "{} is above {}",
-                Long.valueOf(polygon.id().value()),
-                Long.valueOf(vp.id().value()));
-            } else {
-              LOG.debug(
-                "{} is below {}",
-                Long.valueOf(polygon.id().value()),
-                Long.valueOf(vp.id().value()));
-            }
+      final Cell cell = createCell(previous_cells, polygon);
+      all_cells.put(polygon.id(), cell);
+      cells.put(polygon.id(), cell);
+    }
+
+    return cells;
+  }
+
+  private static int overlapSize(
+    final int line0_x0,
+    final int line0_x1,
+    final int line1_x0,
+    final int line1_x1)
+  {
+    final int x1 = Math.min(line0_x1, line1_x1);
+    final int x0 = Math.max(line0_x0, line1_x0);
+    return Math.max(0, Math.subtractExact(x1, x0));
+  }
+
+  private static boolean overlaps(
+    final int line0_x0,
+    final int line0_x1,
+    final int line1_x0,
+    final int line1_x1)
+  {
+    return overlapSize(line0_x0, line0_x1, line1_x0, line1_x1) > 0;
+  }
+
+  private static Cell createCell(
+    final Map<PolygonID, Cell> previous_cells,
+    final PolygonType curr_polygon)
+  {
+    final Optional<PolygonEdgeType> curr_bottom_opt =
+      findBottomEdge(curr_polygon);
+    final Optional<PolygonEdgeType> curr_top_opt =
+      findTopEdge(curr_polygon);
+    final Cell cell =
+      new Cell(curr_polygon, curr_bottom_opt);
+
+    //
+    // If the current cell has a top edge, then check to see if any cells in
+    // the span above have bottom edges that overlap it.
+    //
+
+    if (curr_top_opt.isPresent()) {
+      final PolygonEdgeType curr_top = curr_top_opt.get();
+      final PolygonVertexType curr_top_v0 = curr_top.vertex0();
+      final PolygonVertexType curr_top_v1 = curr_top.vertex1();
+
+      final int curr_x_min =
+        Math.min(curr_top_v0.position().x(), curr_top_v1.position().x());
+      final int curr_x_max =
+        Math.max(curr_top_v0.position().x(), curr_top_v1.position().x());
+
+      //
+      // For each cell in the previous span, check any cell that has a bottom
+      // edge, and check if the bottom edge overlaps the top of this cell.
+      //
+
+      for (final Cell above_cell : previous_cells.values()) {
+        if (above_cell.bottom.isPresent()) {
+          final PolygonEdgeType above_bottom = above_cell.bottom.get();
+
+          final PolygonVertexType above_v0 = above_bottom.vertex0();
+          final PolygonVertexType above_v1 = above_bottom.vertex1();
+          final int above_x_min =
+            Math.min(above_v0.position().x(), above_v1.position().x());
+          final int above_x_max =
+            Math.max(above_v0.position().x(), above_v1.position().x());
+
+          if (overlaps(curr_x_min, curr_x_max, above_x_min, above_x_max)) {
+            above_cell.below.add(cell);
+            cell.above.add(above_cell);
           }
         }
       }
     }
+
+    return cell;
   }
 
-  private static boolean isAbove(
-    final AreaI area0,
-    final AreaI area1)
+  private static Optional<PolygonEdgeType> findBottomEdge(
+    final PolygonType polygon)
   {
-    return area0.maximumY() <= area1.minimumY();
+    final AreaI bounds = polygon.bounds();
+
+    for (final PolygonEdgeType e : polygon.edges()) {
+      if (e.vertex0().position().y() == bounds.maximumY()
+        && e.vertex1().position().y() == bounds.maximumY()) {
+        return Optional.of(e);
+      }
+    }
+
+    return Optional.empty();
+  }
+
+  private static Optional<PolygonEdgeType> findTopEdge(
+    final PolygonType polygon)
+  {
+    final AreaI bounds = polygon.bounds();
+
+    for (final PolygonEdgeType e : polygon.edges()) {
+      if (e.vertex0().position().y() == bounds.minimumY()
+        && e.vertex1().position().y() == bounds.minimumY()) {
+        return Optional.of(e);
+      }
+    }
+
+    return Optional.empty();
   }
 
   /**
@@ -316,9 +416,62 @@ public final class RoomModelLiquidCells
     return intersections;
   }
 
+  @Override
   public MeshReadableType mesh()
   {
     return this.mesh;
+  }
+
+  @Override
+  public Set<CellType> cellRoots()
+  {
+    return this.cell_roots_view;
+  }
+
+  @Override
+  public Map<PolygonID, CellType> cellsAll()
+  {
+    return this.cells_all_view;
+  }
+
+  private static final class Cell implements CellType
+  {
+    private final PolygonType polygon;
+    private final Optional<PolygonEdgeType> bottom;
+    private final ReferenceOpenHashSet<Cell> below;
+    private final ReferenceOpenHashSet<Cell> above;
+    private final Set<CellType> below_view;
+    private final Set<CellType> above_view;
+
+    Cell(
+      final PolygonType in_polygon,
+      final Optional<PolygonEdgeType> in_bottom)
+    {
+      this.polygon = notNull(in_polygon, "Polygon");
+      this.bottom = notNull(in_bottom, "Bottom");
+      this.below = new ReferenceOpenHashSet<>();
+      this.below_view = Collections.unmodifiableSet(this.below);
+      this.above = new ReferenceOpenHashSet<>();
+      this.above_view = Collections.unmodifiableSet(this.above);
+    }
+
+    @Override
+    public PolygonType polygon()
+    {
+      return this.polygon;
+    }
+
+    @Override
+    public Set<CellType> cellsAbove()
+    {
+      return this.above_view;
+    }
+
+    @Override
+    public Set<CellType> cellsBelow()
+    {
+      return this.below_view;
+    }
   }
 
   private static final class EdgePair
