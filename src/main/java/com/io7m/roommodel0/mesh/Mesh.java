@@ -463,11 +463,7 @@ public final class Mesh implements MeshType
     this.polygons_tree.overlappedBy(area, results);
 
     for (final Polygon poly : results) {
-      final List<Vector2I> points =
-        poly.vertices.stream()
-          .map(Vertex::position)
-          .collect(Collectors.toList());
-
+      final List<Vector2I> points = poly.positions();
       if (MeshPolygons.containsPoint(points, position)) {
         return Optional.of(poly);
       }

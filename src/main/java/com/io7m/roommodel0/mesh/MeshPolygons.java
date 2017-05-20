@@ -158,15 +158,7 @@ public final class MeshPolygons
   static boolean isClockwiseOrder(
     final List<Vector2I> vertices)
   {
-    long sum = 0L;
-    for (int index = 0; index < vertices.size(); index++) {
-      final Vector2I v1 = vertices.get(index);
-      final Vector2I v2 = vertices.get((index + 1) % vertices.size());
-      final long xd = Math.subtractExact((long) v2.x(), (long) v1.x());
-      final long yd = Math.addExact((long) v2.y(), (long) v1.y());
-      sum = Math.addExact(sum, Math.multiplyExact(xd, yd));
-    }
-    return sum > 0L;
+    return area(vertices) > 0L;
   }
 
   public static AreaI edgeBounds(
@@ -178,5 +170,21 @@ public final class MeshPolygons
       Math.max(p0.x(), p1.x()),
       Math.min(p0.y(), p1.y()),
       Math.max(p0.y(), p1.y()));
+  }
+
+  public static long area(
+    final List<Vector2I> vertices)
+  {
+    long area = 0L;
+    final int count = vertices.size();
+    for (int index0 = 0; index0 < count; ++index0) {
+      final int index1 = (index0 + 1) % count;
+      final Vector2I v0 = vertices.get(index0);
+      final Vector2I v1 = vertices.get(index1);
+      final long y_sum = Math.addExact((long) v0.y(), (long) v1.y());
+      final long x_sub = Math.subtractExact((long) v1.x(), (long) v0.x());
+      area = Math.addExact(area, Math.multiplyExact(y_sum, x_sub) / 2L);
+    }
+    return area;
   }
 }
