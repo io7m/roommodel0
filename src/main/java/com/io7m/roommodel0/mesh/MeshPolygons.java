@@ -187,4 +187,20 @@ public final class MeshPolygons
     }
     return area;
   }
+
+  public static double area(
+    final List<Vector2I> vertices)
+  {
+    double area = 0.0;
+    final int count = vertices.size();
+    for (int index0 = 0; index0 < count; ++index0) {
+      final int index1 = (index0 + 1) % count;
+      final Vector2I v0 = vertices.get(index0);
+      final Vector2I v1 = vertices.get(index1);
+      final double y_sum = (double) v0.y() + (double) v1.y();
+      final double x_sub = (double) v1.x() - (double) v0.x();
+      area += (y_sum * x_sub) / 2.0;
+    }
+    return area;
+  }
 }
